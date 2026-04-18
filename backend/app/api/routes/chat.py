@@ -12,6 +12,8 @@ from app.services.auth_service import AuthService
 from app.services.firebase_service import FirebaseService
 from app.services.llm_service import LLMService
 from app.utils.helpers import now_utc_iso
+# from backend.app.services import llm_service
+from app.services.llm_service import LLMService
 
 router = APIRouter()
 
@@ -66,7 +68,9 @@ async def process_chat(
         return blocked_response
 
     llm_started_at = perf_counter()
-    llm_output = await llm_service.generate(payload.prompt)
+    # llm_output = await llm_service.generate(payload.prompt)
+    # In app/api/routes/chat.py (inside process_chat)
+    llm_output = await llm_service.generate(input_verdict.sanitized_prompt)
     llm_latency_ms = int((perf_counter() - llm_started_at) * 1000)
     safe_output, redactions, output_risk = guardrail_engine.validate_output(llm_output)
 

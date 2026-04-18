@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     firestore_threat_patterns_collection: str = "threat_patterns"
     firestore_analytics_cache_collection: str = "analytics_cache"
 
+    # model_config = SettingsConfigDict(
+    #     env_file=("backend/.env",),
+    #     env_file_encoding="utf-8",
+    #     case_sensitive=False,
+    #     extra="ignore",
+    # )
     model_config = SettingsConfigDict(
         env_file=(str(ENV_FILE),),
         env_file_encoding="utf-8",
