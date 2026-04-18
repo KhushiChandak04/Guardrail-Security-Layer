@@ -1,6 +1,46 @@
 import { getFirebaseAuth } from "./firebase";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api").replace(/\/+$/, "");
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
+function withCacheBust(path) {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}_ts=${Date.now()}`;
+}
+
+function buildApiBaseCandidates() {
+  const seen = new Set();
+  const candidates = [];
+
+  const add = (value) => {
+    const normalized = String(value || "").trim().replace(/\/+$/, "");
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    candidates.push(normalized);
+  };
+
+  add(API_BASE_URL);
+
+  if (typeof window !== "undefined") {
+    add(`${window.location.origin}/api`);
+
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+      add("http://127.0.0.1:8000/api");
+      add("http://localhost:8000/api");
+    }
+  }
+
+  add("http://127.0.0.1:8000/api");
+  add("http://localhost:8000/api");
+
+  return candidates;
+}
 
 async function resolveCurrentIdToken() {
   const auth = getFirebaseAuth();
@@ -28,28 +68,50 @@ function buildErrorMessage(payload, status) {
 }
 
 async function request(path, { method = "GET", body, headers = {} } = {}) {
-  const url = `${API_BASE_URL}${path}`;
-  const response = await fetch(url, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const apiBases = buildApiBaseCandidates();
+  let lastNetworkError = null;
 
-  let payload = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
+  for (const apiBase of apiBases) {
+    const url = `${apiBase}${path}`;
+    let response;
+
+    try {
+      response = await fetch(url, {
+        method,
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          ...NO_STORE_HEADERS,
+          ...headers,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (networkError) {
+      lastNetworkError = networkError;
+      continue;
+    }
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      throw new Error(buildErrorMessage(payload, response.status));
+    }
+
+    return payload;
   }
 
-  if (!response.ok) {
-    throw new Error(buildErrorMessage(payload, response.status));
+  if (lastNetworkError) {
+    throw new Error(
+      "Unable to reach backend API. Start backend server with `npm run dev:backend:stable` or set VITE_API_BASE_URL.",
+    );
   }
 
-  return payload;
+  throw new Error("Unable to reach backend API.");
 }
 
 export async function sendChatPrompt({ prompt, idToken, sessionId, metadata = {} }) {
@@ -92,15 +154,15 @@ export async function getLogs({ decision, level, search, limit = 25, offset = 0 
   params.set("limit", String(limit));
   params.set("offset", String(offset));
 
-  return request(`/logs?${params.toString()}`);
+  return request(withCacheBust(`/logs?${params.toString()}`));
 }
 
 export async function getStats(limit = 250) {
-  return request(`/stats?limit=${encodeURIComponent(String(limit))}`);
+  return request(withCacheBust(`/stats?limit=${encodeURIComponent(String(limit))}`));
 }
 
 export async function getPolicies() {
-  return request("/policies");
+  return request(withCacheBust("/policies"));
 }
 
 export async function updatePolicies(payload) {
@@ -111,5 +173,5 @@ export async function updatePolicies(payload) {
 }
 
 export async function getGuardrailDiagnostics() {
-  return request("/diagnostics/guardrails");
+  return request(withCacheBust("/diagnostics/guardrails"));
 }

@@ -4,6 +4,8 @@ import { NavLink } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import { getStats } from "../services/api";
 
+const SIDEBAR_POLL_INTERVAL_MS = 15000;
+
 export default function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const [risk, setRisk] = useState(0);
@@ -35,8 +37,13 @@ export default function Sidebar() {
     }
 
     loadRisk();
+    const intervalId = window.setInterval(() => {
+      loadRisk();
+    }, SIDEBAR_POLL_INTERVAL_MS);
+
     return () => {
       isMounted = false;
+      window.clearInterval(intervalId);
     };
   }, []);
 

@@ -1,9 +1,17 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import Sidebar from "../../components/Sidebar";
 import { useAuth } from "../../hooks/useAuth.jsx";
 import { getLogs, getStats } from "../../services/api";
+
+const DASHBOARD_POLL_INTERVAL_MS = 15000;
+
+function getTimestampMs(item) {
+  const raw = item?.timestamp_iso || item?.timestamp;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
 
 function formatRelativeTime(value) {
   if (!value) {
@@ -64,6 +72,80 @@ function normalizeMetricMap(value) {
     accumulator[normalizedKey] = Number(count || 0);
     return accumulator;
   }, {});
+}
+
+function normalizeAttackLabel(label) {
+  const normalized = String(label || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (!normalized || normalized === "safe" || normalized === "none") {
+    return "";
+  }
+
+  const mappings = {
+    promptinjection: "Prompt injection",
+    "prompt injection": "Prompt injection",
+    "prompt injection detected": "Prompt injection",
+    jailbreak: "Jailbreak attempt",
+    "jailbreak attempt": "Jailbreak attempt",
+    "explicit jailbreak request": "Jailbreak attempt",
+    "explicit override intent": "Override attempt",
+    "override intent": "Override attempt",
+    "policy violation": "Policy violation",
+    "system prompt extraction attempt": "System prompt extraction",
+    "system extraction": "System prompt extraction",
+    "pii detected": "PII detected",
+    "pii removed": "PII redaction",
+    "secret exposure": "Secret exposure",
+    "data exfiltration": "Data exfiltration",
+  };
+
+  if (mappings[normalized]) {
+    return mappings[normalized];
+  }
+
+  const compact = normalized.replace(/\s+/g, "");
+  if (mappings[compact]) {
+    return mappings[compact];
+  }
+
+  return normalized
+    .split(" ")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function deriveAttackCountsFromLogs(logs) {
+  const counts = {};
+
+  logs.forEach((item) => {
+    const sourceLabels = [];
+
+    if (Array.isArray(item?.input_flags)) {
+      sourceLabels.push(...item.input_flags.map((flag) => String(flag || "")));
+    }
+
+    const reason = String(item?.reason || "").trim();
+    if (reason) {
+      const reasonParts = reason
+        .split("|")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      sourceLabels.push(...reasonParts);
+    }
+
+    sourceLabels
+      .map(normalizeAttackLabel)
+      .filter(Boolean)
+      .forEach((label) => {
+        counts[label] = (counts[label] || 0) + 1;
+      });
+  });
+
+  return counts;
 }
 
 function deriveStatsFromLogs(logs) {
@@ -146,62 +228,80 @@ function deriveStatsFromLogs(logs) {
 }
 
 export default function DashboardHome() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [stats, setStats] = useState(null);
   const [logs, setLogs] = useState([]);
   const [logsMeta, setLogsMeta] = useState({ count: 0, totalFiltered: 0, source: "unknown" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const latestRequestRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadDashboard() {
-      setLoading(true);
+    async function loadDashboard(showSpinner) {
+      const requestId = ++latestRequestRef.current;
+
+      if (showSpinner) {
+        setLoading(true);
+        setStats(null);
+        setLogs([]);
+        setLogsMeta({ count: 0, totalFiltered: 0, source: "unknown" });
+      }
       setError("");
 
       try {
         const [statsResponse, logsResponse] = await Promise.all([
           getStats(250),
-          getLogs({ limit: 120, offset: 0 }),
+          getLogs({ limit: 200, offset: 0 }),
         ]);
 
-        if (!isMounted) {
+        if (!isMounted || requestId !== latestRequestRef.current) {
           return;
         }
 
         const rows = Array.isArray(logsResponse?.items) ? logsResponse.items : [];
+        const sortedRows = [...rows].sort((a, b) => getTimestampMs(b) - getTimestampMs(a));
         setStats(statsResponse || {});
-        setLogs(rows);
+        setLogs(sortedRows);
         setLogsMeta({
-          count: Number(logsResponse?.count ?? rows.length),
-          totalFiltered: Number(logsResponse?.total_filtered ?? rows.length),
+          count: Number(logsResponse?.count ?? sortedRows.length),
+          totalFiltered: Number(logsResponse?.total_filtered ?? sortedRows.length),
           source: String(logsResponse?.source || "unknown"),
         });
       } catch (requestError) {
-        if (!isMounted) {
+        if (!isMounted || requestId !== latestRequestRef.current) {
           return;
         }
         setError(requestError?.message || "Unable to load dashboard metrics.");
-        setLogsMeta({ count: 0, totalFiltered: 0, source: "unknown" });
+        if (showSpinner) {
+          setStats(null);
+          setLogs([]);
+          setLogsMeta({ count: 0, totalFiltered: 0, source: "unknown" });
+        }
       } finally {
-        if (isMounted) {
+        if (isMounted && requestId === latestRequestRef.current) {
           setLoading(false);
         }
       }
     }
 
-    loadDashboard();
+    loadDashboard(true);
+    const intervalId = window.setInterval(() => {
+      loadDashboard(false);
+    }, DASHBOARD_POLL_INTERVAL_MS);
+
     return () => {
       isMounted = false;
+      window.clearInterval(intervalId);
     };
-  }, []);
+  }, [user?.uid]);
 
   const normalizedStats = useMemo(() => {
     const derived = deriveStatsFromLogs(logs);
     const source = stats || {};
-    const attackCounts = normalizeMetricMap(source.attack_counts);
     const piiCounts = normalizeMetricMap(source.pii_redaction_counts);
+    const attackCountsFromLogs = deriveAttackCountsFromLogs(logs);
 
     return {
       promptsToday: Number(source.prompts_today ?? derived.promptsToday),
@@ -212,7 +312,7 @@ export default function DashboardHome() {
       avgLatency: Number(source.avg_latency_ms ?? derived.avgLatency),
       activeSessions: Number(source.active_sessions ?? derived.activeSessions),
       attackRate: Number(source.attack_rate ?? derived.attackRate),
-      attackCounts: Object.keys(attackCounts).length > 0 ? attackCounts : derived.attackCounts,
+      attackCounts: attackCountsFromLogs,
       piiCounts: Object.keys(piiCounts).length > 0 ? piiCounts : derived.piiCounts,
       totalLogs: Number(source.recent_count ?? logsMeta.totalFiltered ?? derived.totalLogs),
     };
@@ -248,7 +348,7 @@ export default function DashboardHome() {
 
     return entries
       .map(([label, value], index) => ({
-        label: label.replace(/_/g, " "),
+        label,
         value: Math.round((Number(value || 0) / total) * 100),
         color: ["var(--danger)", "var(--gold)", "#A78BFA", "var(--warning)", "var(--success)"][index % 5],
       }))
@@ -272,13 +372,15 @@ export default function DashboardHome() {
       <main
         style={{
           flex: 1,
-          overflow: "hidden",
+          overflowX: "hidden",
+          overflowY: "auto",
           padding: "1.25rem",
+          paddingBottom: "2rem",
           marginLeft: "210px",
           display: "flex",
           flexDirection: "column",
           gap: "0.875rem",
-          height: "100%",
+          height: "100vh",
         }}
       >
         <div
@@ -323,7 +425,7 @@ export default function DashboardHome() {
                   animation: "pulse 1.5s infinite",
                 }}
               ></span>
-              Live � Monitoring
+              Live | Monitoring
             </div>
           </div>
         </div>
@@ -337,7 +439,7 @@ export default function DashboardHome() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
             gap: "0.875rem",
           }}
         >
@@ -372,6 +474,8 @@ export default function DashboardHome() {
             padding: "0.75rem",
             display: "flex",
             justifyContent: "space-around",
+            flexWrap: "wrap",
+            gap: "0.75rem",
           }}
         >
           <Metric label="Avg latency" value={`${normalizedStats.avgLatency}ms`} />
@@ -380,7 +484,7 @@ export default function DashboardHome() {
           <Metric
             label="Records scanned"
             value={String(normalizedStats.totalLogs)}
-            sub={`${logsMeta.count} loaded � ${logsMeta.source}`}
+            sub={`${logsMeta.count} loaded | ${logsMeta.source}`}
           />
         </div>
 
@@ -400,7 +504,7 @@ export default function DashboardHome() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(5, 1fr)",
+              gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
               gap: "0.5rem",
               marginTop: "0.75rem",
             }}
@@ -429,13 +533,12 @@ export default function DashboardHome() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
             gap: "0.875rem",
-            flex: 1,
-            overflow: "hidden",
+            minHeight: "320px",
           }}
         >
-          <div className="card" style={{ display: "flex", flexDirection: "column" }}>
+          <div className="card" style={{ display: "flex", flexDirection: "column", maxHeight: "420px", overflowY: "auto" }}>
             <h3 className="label-style">ATTACK TYPES</h3>
             <div
               style={{
@@ -495,7 +598,7 @@ export default function DashboardHome() {
             </div>
           </div>
 
-          <div className="card" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <div className="card" style={{ display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: "420px", overflowY: "auto" }}>
             <h3 className="label-style">LIVE FEED (INPUT TO OUTPUT)</h3>
             {loading ? (
               <p style={{ color: "var(--brown-light)", fontSize: "0.82rem" }}>Loading live logs...</p>

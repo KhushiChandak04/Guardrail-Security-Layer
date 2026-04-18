@@ -13,6 +13,33 @@ import {
 import { getFirebaseAuth, syncAuthUserToFirestore } from "../services/firebase";
 
 const AuthContext = createContext(undefined);
+const TRANSIENT_CACHE_KEYS = [
+  "underdog-audit-logs",
+  "underdog_guardrail_session_id",
+];
+
+async function clearRuntimeClientCache() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    TRANSIENT_CACHE_KEYS.forEach((key) => {
+      window.localStorage.removeItem(key);
+    });
+  } catch {
+    // Ignore browser storage failures and continue auth flow.
+  }
+
+  if ("caches" in window) {
+    try {
+      const cacheNames = await window.caches.keys();
+      await Promise.all(cacheNames.map((cacheName) => window.caches.delete(cacheName)));
+    } catch {
+      // Ignore cache API failures and continue auth flow.
+    }
+  }
+}
 
 export function AuthProvider({ children }) {
   const auth = useAuthProvider();
@@ -52,7 +79,8 @@ function useAuthProvider() {
 
     const credentials = await signInWithPopup(auth, new GoogleAuthProvider());
     await syncAuthUserToFirestore(credentials.user);
-    navigate("/dashboard");
+    await clearRuntimeClientCache();
+    navigate(`/dashboard?fresh=${Date.now()}`, { replace: true });
     return credentials.user;
   };
 
@@ -85,7 +113,8 @@ function useAuthProvider() {
     }
 
     await syncAuthUserToFirestore(signedInUser, role);
-    navigate("/dashboard");
+    await clearRuntimeClientCache();
+    navigate(`/dashboard?fresh=${Date.now()}`, { replace: true });
     return signedInUser;
   };
 
@@ -97,6 +126,7 @@ function useAuthProvider() {
     }
 
     await signOut(auth);
+    await clearRuntimeClientCache();
     navigate("/");
   };
 
