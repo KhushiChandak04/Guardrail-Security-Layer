@@ -9,7 +9,7 @@
     "sdk/js"
   ],
   "scripts": {
-    "dev:backend": ".venv/Scripts/python.exe -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:backend": ".venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --app-dir backend",
     "dev:frontend": "npm run dev --workspace @guardrail/frontend",
     "dev:extension": "npm run dev --workspace @guardrail/extension",
     "build": "npm run build --workspaces",
