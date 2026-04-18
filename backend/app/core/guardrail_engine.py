@@ -86,6 +86,8 @@
 #         )
 import asyncio
 from dataclasses import dataclass
+
+from app.config.settings import settings
 from app.services.vector_service import VectorService
 from app.utils.security_utils import normalize_text
 from app.guardrails.input.regex_rules import detect_system_extraction, detect_heuristic_injection
@@ -102,9 +104,13 @@ class InputVerdict:
 class GuardrailEngine:
     def __init__(self, vector_service: VectorService):
         self.vector_service = vector_service
-        self.ml_ensemble = MLEnsembleDetector()
-        self.risk_block_threshold = 70
-        self.risk_sanitize_threshold = 40
+        self.ml_ensemble = MLEnsembleDetector(
+            injection_model=settings.prompt_injection_model_ref,
+            toxicity_model=settings.toxicity_model_ref,
+            local_files_only=settings.models_local_only,
+        )
+        self.risk_block_threshold = settings.ingress_block_threshold
+        self.risk_sanitize_threshold = settings.ingress_sanitize_threshold
 
     async def check_vector_async(self, prompt: str) -> tuple[float, str | None]:
         """Wrap the ChromaDB check to run asynchronously."""

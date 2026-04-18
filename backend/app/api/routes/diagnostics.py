@@ -5,18 +5,19 @@ from fastapi import APIRouter, Depends
 from app.api.dependencies import get_firebase_service, get_guardrail_engine, get_vector_service
 from app.config.settings import settings
 from app.core.guardrail_engine import GuardrailEngine
+from app.models.diagnostics_models import GuardrailDiagnosticsResponse
 from app.services.firebase_service import FirebaseService
 from app.services.vector_service import VectorService
 
 router = APIRouter()
 
 
-@router.get("/diagnostics/guardrails")
+@router.get("/diagnostics/guardrails", response_model=GuardrailDiagnosticsResponse)
 async def guardrail_diagnostics(
     firebase_service: FirebaseService = Depends(get_firebase_service),
     guardrail_engine: GuardrailEngine = Depends(get_guardrail_engine),
     vector_service: VectorService = Depends(get_vector_service),
-) -> dict[str, object]:
+) -> GuardrailDiagnosticsResponse:
     storage_snapshot = await firebase_service.fetch_guardrail_snapshot()
 
     return {
@@ -31,6 +32,26 @@ async def guardrail_diagnostics(
             "collection": settings.chroma_collection,
             "seed_file": settings.resolved_jailbreak_seed_file,
             "seed_pattern_count": len(vector_service.list_seed_patterns()),
+            "embedding_model": settings.embedding_model_ref,
+            "embedding_model_name": settings.embedding_model_name,
+            "embedding_model_path": settings.resolved_embedding_model_path,
+            "embedding_model_local": settings.using_local_embedding_model,
+        },
+        "ml_models": {
+            "local_only": settings.models_local_only,
+            "llm": {
+                "provider": "groq",
+                "model": settings.groq_model,
+                "temperature": settings.llm_temperature,
+            },
+            "prompt_injection_model": settings.prompt_injection_model_ref,
+            "prompt_injection_model_name": settings.prompt_injection_model_name,
+            "prompt_injection_model_path": settings.resolved_prompt_injection_model_path,
+            "prompt_injection_model_local": settings.using_local_prompt_injection_model,
+            "toxicity_model": settings.toxicity_model_ref,
+            "toxicity_model_name": settings.toxicity_model_name,
+            "toxicity_model_path": settings.resolved_toxicity_model_path,
+            "toxicity_model_local": settings.using_local_toxicity_model,
         },
         "storage": storage_snapshot,
     }

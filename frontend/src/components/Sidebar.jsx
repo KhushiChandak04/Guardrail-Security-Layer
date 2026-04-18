@@ -1,10 +1,44 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
+
 import { useTheme } from "../context/ThemeContext";
+import { getStats } from "../services/api";
 
 export default function Sidebar() {
   const { theme, toggleTheme } = useTheme();
-  const risk = 63; // Mock value
+  const [risk, setRisk] = useState(0);
+  const [riskReady, setRiskReady] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadRisk() {
+      try {
+        const stats = await getStats(120);
+        if (!isMounted) {
+          return;
+        }
+
+        const attackRate = Number(stats?.attack_rate || 0);
+        const cleanRate = Number(stats?.clean_rate || 0);
+        const blendedRisk = Math.min(100, Math.max(0, Math.round((attackRate * 0.6) + ((100 - cleanRate) * 0.4))));
+        setRisk(blendedRisk);
+      } catch {
+        if (isMounted) {
+          setRisk(0);
+        }
+      } finally {
+        if (isMounted) {
+          setRiskReady(true);
+        }
+      }
+    }
+
+    loadRisk();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const getRiskColor = (r) => {
     if (r <= 25) return "var(--success)";
@@ -148,7 +182,7 @@ export default function Sidebar() {
                   color: riskColor,
                 }}
               >
-                {risk}
+                {riskReady ? risk : "--"}
               </div>
               <div
                 className={`badge badge-${risk > 75 ? "critical" : risk > 50 ? "high" : risk > 25 ? "medium" : "low"}`}

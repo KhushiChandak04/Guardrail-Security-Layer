@@ -1,5 +1,16 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+
 import Sidebar from "../components/Sidebar";
+import { getPolicies, updatePolicies } from "../services/api";
+
+const DEFAULT_PII = {
+  Aadhaar: true,
+  PAN: true,
+  UPI: true,
+  GST: true,
+  PHONE_NUMBER: true,
+  EMAIL_ADDRESS: true,
+};
 
 export default function Policies() {
   const [blockThreshold, setBlockThreshold] = useState(80);
@@ -7,48 +18,110 @@ export default function Policies() {
   const [redactPII, setRedactPII] = useState(true);
   const [honeypot, setHoneypot] = useState(false);
   const [multiTurn, setMultiTurn] = useState(true);
-  const [blockedTopics, setBlockedTopics] = useState([
-    "weapons",
-    "jailbreak",
-    "competitor names",
-  ]);
+  const [blockedTopics, setBlockedTopics] = useState([]);
   const [newTopic, setNewTopic] = useState("");
-  const [piiDetection, setPiiDetection] = useState({
-    Aadhaar: true,
-    "PAN card": true,
-    "UPI ID": true,
-    "GST no.": true,
-    "Phone +91": true,
-    "Voter ID": false,
-  });
+  const [piiDetection, setPiiDetection] = useState(DEFAULT_PII);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadPolicy() {
+      setLoading(true);
+      setError("");
+      setStatus("");
+
+      try {
+        const response = await getPolicies();
+        const policy = response?.policy || {};
+
+        if (!isMounted) {
+          return;
+        }
+
+        setBlockThreshold(Number(policy.max_risk_score || 80));
+        setWarnThreshold(Number(policy.sanitize_risk_score || 50));
+        setRedactPII(Boolean(policy.redact_pii));
+        setHoneypot(Boolean(policy.honeypot_mode));
+        setMultiTurn(Boolean(policy.multi_turn_tracking));
+        setBlockedTopics(Array.isArray(policy.blocked_topics) ? policy.blocked_topics : []);
+        setPiiDetection({
+          ...DEFAULT_PII,
+          ...(typeof policy.pii_detection === "object" && policy.pii_detection ? policy.pii_detection : {}),
+        });
+      } catch (requestError) {
+        if (!isMounted) {
+          return;
+        }
+        setError(requestError?.message || "Unable to load policy from backend.");
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadPolicy();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const blockCategories = useMemo(() => {
+    const categories = ["prompt_injection", "system_extraction", "secret_exposure"];
+    if (redactPII) {
+      categories.push("pii_detected");
+    }
+    return categories;
+  }, [redactPII]);
 
   const handleAddTopic = () => {
-    if (newTopic && !blockedTopics.includes(newTopic)) {
-      setBlockedTopics([...blockedTopics, newTopic]);
-      setNewTopic("");
+    const normalized = newTopic.trim();
+    if (!normalized || blockedTopics.includes(normalized)) {
+      return;
     }
+
+    setBlockedTopics((prev) => [...prev, normalized]);
+    setNewTopic("");
   };
 
   const handleRemoveTopic = (topicToRemove) => {
-    setBlockedTopics(blockedTopics.filter((topic) => topic !== topicToRemove));
+    setBlockedTopics((prev) => prev.filter((topic) => topic !== topicToRemove));
   };
 
   const handlePiiChange = (pii) => {
     setPiiDetection((prev) => ({ ...prev, [pii]: !prev[pii] }));
   };
 
-  const handleSave = () => {
-    const policyState = {
-      blockThreshold,
-      warnThreshold,
-      redactPII,
-      honeypot,
-      multiTurn,
-      blockedTopics,
-      piiDetection,
-    };
-    console.log("Policy saved", policyState);
-    // TODO: POST /api/policies
+  const handleSave = async () => {
+    setError("");
+    setStatus("");
+    setSaving(true);
+
+    try {
+      const response = await updatePolicies({
+        max_risk_score: Number(blockThreshold),
+        sanitize_risk_score: Number(warnThreshold),
+        redact_pii: Boolean(redactPII),
+        block_categories: blockCategories,
+        blocked_topics: blockedTopics,
+        pii_detection: piiDetection,
+        honeypot_mode: Boolean(honeypot),
+        multi_turn_tracking: Boolean(multiTurn),
+      });
+
+      const policy = response?.policy || {};
+      setBlockThreshold(Number(policy.max_risk_score || blockThreshold));
+      setWarnThreshold(Number(policy.sanitize_risk_score || warnThreshold));
+      setStatus("Policy saved to backend database.");
+    } catch (requestError) {
+      setError(requestError?.message || "Unable to save policy.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -75,9 +148,25 @@ export default function Policies() {
             Policies
           </h2>
           <p style={{ color: "var(--brown-light)", fontSize: "0.85rem" }}>
-            Configure guardrail thresholds and rules
+            Configure guardrail thresholds and rules from live backend policy storage.
           </p>
         </header>
+
+        {loading ? (
+          <div className="card" style={{ padding: "0.75rem", color: "var(--brown-light)" }}>
+            Loading policy configuration...
+          </div>
+        ) : null}
+        {error ? (
+          <div className="card" style={{ padding: "0.75rem", color: "var(--danger)" }}>
+            {error}
+          </div>
+        ) : null}
+        {status ? (
+          <div className="card" style={{ padding: "0.75rem", color: "var(--success)" }}>
+            {status}
+          </div>
+        ) : null}
 
         <div
           style={{
@@ -88,11 +177,7 @@ export default function Policies() {
             overflow: "hidden",
           }}
         >
-          {/* Left Column */}
-          <div
-            className="card"
-            style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}
-          >
+          <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <h3 className="label-style">THRESHOLDS</h3>
             <SliderControl
               label="Block above"
@@ -108,9 +193,7 @@ export default function Policies() {
               color="var(--warning)"
               description="Interactions above this trigger redaction"
             />
-            <hr
-              style={{ border: "none", borderTop: "1px solid var(--border)" }}
-            />
+            <hr style={{ border: "none", borderTop: "1px solid var(--border)" }} />
             <ToggleControl
               label="Redact PII"
               description="Automatically mask PII before LLM call"
@@ -131,11 +214,7 @@ export default function Policies() {
             />
           </div>
 
-          {/* Right Column */}
-          <div
-            className="card"
-            style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}
-          >
+          <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <h3 className="label-style">RULES</h3>
             <div>
               <h4 className="policy-section-title">Blocked topics</h4>
@@ -143,10 +222,7 @@ export default function Policies() {
                 {blockedTopics.map((topic) => (
                   <div key={topic} className="chip">
                     {topic}
-                    <button
-                      onClick={() => handleRemoveTopic(topic)}
-                      className="chip-close"
-                    >
+                    <button onClick={() => handleRemoveTopic(topic)} className="chip-close">
                       ×
                     </button>
                   </div>
@@ -156,7 +232,7 @@ export default function Policies() {
                 <input
                   type="text"
                   value={newTopic}
-                  onChange={(e) => setNewTopic(e.target.value)}
+                  onChange={(event) => setNewTopic(event.target.value)}
                   placeholder="Add topic"
                   className="filter-select"
                   style={{ flex: 1 }}
@@ -170,18 +246,10 @@ export default function Policies() {
                 </button>
               </div>
             </div>
-            <hr
-              style={{ border: "none", borderTop: "1px solid var(--border)" }}
-            />
+            <hr style={{ border: "none", borderTop: "1px solid var(--border)" }} />
             <div>
-              <h4 className="policy-section-title">Indian PII detection</h4>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "0.5rem",
-                }}
-              >
+              <h4 className="policy-section-title">PII detection profile</h4>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
                 {Object.keys(piiDetection).map((pii) => (
                   <CheckboxControl
                     key={pii}
@@ -196,8 +264,9 @@ export default function Policies() {
               onClick={handleSave}
               className="btn btn-cta"
               style={{ width: "100%", marginTop: "auto" }}
+              disabled={saving || loading}
             >
-              Save policy
+              {saving ? "Saving..." : "Save policy"}
             </button>
           </div>
         </div>
@@ -222,13 +291,7 @@ export default function Policies() {
 
 const SliderControl = ({ label, value, onChange, color, description }) => (
   <div>
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-      }}
-    >
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <label style={{ color: "var(--brown-dark)" }}>{label}</label>
       <span style={{ color, fontWeight: "bold" }}>{value}</span>
     </div>
@@ -237,34 +300,18 @@ const SliderControl = ({ label, value, onChange, color, description }) => (
       min="0"
       max="100"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      style={{
-        width: "100%",
-        accentColor: "var(--gold)",
-        marginTop: "0.25rem",
-      }}
+      onChange={(event) => onChange(Number(event.target.value))}
+      style={{ width: "100%", accentColor: "var(--gold)", marginTop: "0.25rem" }}
     />
-    <p style={{ fontSize: "0.75rem", color: "var(--brown-light)" }}>
-      {description}
-    </p>
+    <p style={{ fontSize: "0.75rem", color: "var(--brown-light)" }}>{description}</p>
   </div>
 );
 
 const ToggleControl = ({ label, description, enabled, onToggle }) => (
-  <div
-    style={{
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-    }}
-  >
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
     <div>
-      <div style={{ color: "var(--brown-dark)", fontSize: "0.9rem" }}>
-        {label}
-      </div>
-      <p style={{ fontSize: "0.75rem", color: "var(--brown-light)" }}>
-        {description}
-      </p>
+      <div style={{ color: "var(--brown-dark)", fontSize: "0.9rem" }}>{label}</div>
+      <p style={{ fontSize: "0.75rem", color: "var(--brown-light)" }}>{description}</p>
     </div>
     <button
       onClick={onToggle}
@@ -304,8 +351,6 @@ const CheckboxControl = ({ label, checked, onChange }) => (
       onChange={onChange}
       style={{ accentColor: "var(--gold)", width: "16px", height: "16px" }}
     />
-    <label style={{ fontSize: "0.85rem", color: "var(--brown-dark)" }}>
-      {label}
-    </label>
+    <label style={{ fontSize: "0.85rem", color: "var(--brown-dark)" }}>{label}</label>
   </div>
 );

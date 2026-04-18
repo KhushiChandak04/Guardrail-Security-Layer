@@ -6,9 +6,11 @@ import { useTheme } from "../context/ThemeContext";
 import loginBg from "../assets/auth-bg.jpg";
 
 export default function LoginPage() {
-  const { loginWithGoogle, loginWithForm } = useAuth();
+  const { loginWithGoogle, loginWithForm, isFirebaseReady } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [mode, setMode] = useState("login");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
   const [form, setForm] = useState({
     fullName: "",
     email: "",
@@ -29,9 +31,31 @@ export default function LoginPage() {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    loginWithForm({ ...form, mode });
+    setError("");
+
+    try {
+      setSubmitting(true);
+      await loginWithForm({ ...form, mode });
+    } catch (authError) {
+      setError(authError?.message || "Unable to authenticate. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError("");
+
+    try {
+      setSubmitting(true);
+      await loginWithGoogle();
+    } catch (authError) {
+      setError(authError?.message || "Google sign-in failed.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -102,6 +126,12 @@ export default function LoginPage() {
         <h2 className="auth-title">{title}</h2>
         <p className="auth-subtitle">{subtitle}</p>
 
+        {!isFirebaseReady ? (
+          <p className="auth-footnote" style={{ color: "var(--danger)" }}>
+            Firebase config missing. Check frontend/.env values.
+          </p>
+        ) : null}
+
         <form className="auth-form" onSubmit={handleSubmit}>
           {isSignup && (
             <label className="auth-field">
@@ -167,9 +197,15 @@ export default function LoginPage() {
             />
           </label>
           <button type="submit" className="btn btn-cta auth-submit">
-            {isSignup ? "Create account" : "Sign in"}
+            {submitting ? "Please wait..." : isSignup ? "Create account" : "Sign in"}
           </button>
         </form>
+
+        {error ? (
+          <p className="auth-footnote" style={{ color: "var(--danger)", marginTop: "0.75rem" }}>
+            {error}
+          </p>
+        ) : null}
 
         <div className="auth-divider">
           <span>or</span>
@@ -178,7 +214,8 @@ export default function LoginPage() {
         <button
           type="button"
           className="btn btn-outline auth-google"
-          onClick={loginWithGoogle}
+          onClick={handleGoogleLogin}
+          disabled={submitting || !isFirebaseReady}
         >
           <svg
             width="18"
@@ -203,7 +240,7 @@ export default function LoginPage() {
               fill="#ea4335"
             />
           </svg>
-          {googleLabel}
+          {submitting ? "Please wait..." : googleLabel}
         </button>
 
         <p className="auth-footnote">

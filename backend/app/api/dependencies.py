@@ -14,6 +14,7 @@ def get_vector_service() -> VectorService:
         persist_path=settings.resolved_chroma_path,
         collection_name=settings.chroma_collection,
         seed_file=settings.resolved_jailbreak_seed_file,
+        embedding_model=settings.embedding_model_ref,
     )
 
 
