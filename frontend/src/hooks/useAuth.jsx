@@ -1,7 +1,45 @@
-import { useState, useEffect, createContext, useContext } from "react";
+import { useEffect, useState, createContext, useContext } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile,
+} from "firebase/auth";
 
-const AuthContext = createContext(null);
+import { getFirebaseAuth, syncAuthUserToFirestore } from "../services/firebase";
+
+const AuthContext = createContext(undefined);
+const TRANSIENT_CACHE_KEYS = [
+  "underdog-audit-logs",
+  "underdog_guardrail_session_id",
+];
+
+async function clearRuntimeClientCache() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    TRANSIENT_CACHE_KEYS.forEach((key) => {
+      window.localStorage.removeItem(key);
+    });
+  } catch {
+    // Ignore browser storage failures and continue auth flow.
+  }
+
+  if ("caches" in window) {
+    try {
+      const cacheNames = await window.caches.keys();
+      await Promise.all(cacheNames.map((cacheName) => window.caches.delete(cacheName)));
+    } catch {
+      // Ignore cache API failures and continue auth flow.
+    }
+  }
+}
 
 export function AuthProvider({ children }) {
   const auth = useAuthProvider();
@@ -17,71 +55,86 @@ export const useAuth = () => {
 };
 
 function useAuthProvider() {
+  const auth = getFirebaseAuth();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    try {
-      const savedUser = localStorage.getItem("underdog-user");
-      if (savedUser) {
-        setUser(JSON.parse(savedUser));
-        setIsAuthenticated(true);
-      }
-    } catch (error) {
-      console.error("Failed to parse user from localStorage", error);
-    } finally {
+    if (!auth) {
       setIsLoading(false);
+      return () => {};
     }
-  }, []);
 
-  const loginWithGoogle = () => {
-    // TODO: implement real Google OAuth flow
-    const fakeUser = {
-      id: "u_001",
-      name: "Demo User",
-      email: "demo@underdog.ai",
-      picture: null,
-    };
-    localStorage.setItem("underdog-user", JSON.stringify(fakeUser));
-    // Mock token for API calls
-    localStorage.setItem("underdog-token", "mock-jwt-token");
-    setUser(fakeUser);
-    setIsAuthenticated(true);
-    navigate("/dashboard");
+    return onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser);
+      setIsLoading(false);
+    });
+  }, [auth]);
+
+  const loginWithGoogle = async () => {
+    if (!auth) {
+      throw new Error("Firebase auth config is missing in frontend/.env");
+    }
+
+    const credentials = await signInWithPopup(auth, new GoogleAuthProvider());
+    await syncAuthUserToFirestore(credentials.user);
+    await clearRuntimeClientCache();
+    navigate(`/dashboard?fresh=${Date.now()}`, { replace: true });
+    return credentials.user;
   };
 
-  const loginWithForm = (formData) => {
-    const name = formData?.fullName || "Underdog Member";
-    const email = formData?.email || "member@underdog.ai";
-    const fakeUser = {
-      id: `u_${Date.now()}`,
-      name,
-      email,
-      company: formData?.company || "",
-      role: formData?.role || "",
-      picture: null,
-    };
-    localStorage.setItem("underdog-user", JSON.stringify(fakeUser));
-    localStorage.setItem("underdog-token", "mock-jwt-token");
-    setUser(fakeUser);
-    setIsAuthenticated(true);
-    navigate("/dashboard");
+  const loginWithForm = async (formData) => {
+    if (!auth) {
+      throw new Error("Firebase auth config is missing in frontend/.env");
+    }
+
+    const email = String(formData?.email || "").trim();
+    const password = String(formData?.password || "").trim();
+    const fullName = String(formData?.fullName || "").trim();
+    const role = String(formData?.role || "user").trim() || "user";
+    const mode = formData?.mode === "signup" ? "signup" : "login";
+
+    if (!email || !password) {
+      throw new Error("Email and password are required");
+    }
+
+    let signedInUser;
+    if (mode === "signup") {
+      const credentials = await createUserWithEmailAndPassword(auth, email, password);
+      signedInUser = credentials.user;
+
+      if (fullName) {
+        await updateProfile(credentials.user, { displayName: fullName });
+      }
+    } else {
+      const credentials = await signInWithEmailAndPassword(auth, email, password);
+      signedInUser = credentials.user;
+    }
+
+    await syncAuthUserToFirestore(signedInUser, role);
+    await clearRuntimeClientCache();
+    navigate(`/dashboard?fresh=${Date.now()}`, { replace: true });
+    return signedInUser;
   };
 
-  const logout = () => {
-    localStorage.removeItem("underdog-user");
-    localStorage.removeItem("underdog-token");
-    setUser(null);
-    setIsAuthenticated(false);
+  const logout = async () => {
+    if (!auth) {
+      setUser(null);
+      navigate("/");
+      return;
+    }
+
+    await signOut(auth);
+    await clearRuntimeClientCache();
     navigate("/");
   };
 
   return {
     user,
     isLoading,
-    isAuthenticated,
+    isAuthenticated: Boolean(user),
+    isFirebaseReady: Boolean(auth),
     loginWithGoogle,
     loginWithForm,
     logout,

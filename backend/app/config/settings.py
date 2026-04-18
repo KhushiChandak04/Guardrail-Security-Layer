@@ -22,6 +22,30 @@ def resolve_runtime_path(path_value: str) -> str:
     return str((BACKEND_DIR / candidate).resolve())
 
 
+def resolve_optional_runtime_path(path_value: str) -> str:
+    if not path_value or not path_value.strip():
+        return ""
+    return resolve_runtime_path(path_value)
+
+
+def model_path_has_artifacts(path_value: str) -> bool:
+    if not path_value:
+        return False
+
+    model_path = Path(path_value)
+    if not model_path.exists() or not model_path.is_dir():
+        return False
+
+    marker_files = {
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "modules.json",
+        "sentence_bert_config.json",
+    }
+    return any((model_path / marker).exists() for marker in marker_files)
+
+
 class Settings(BaseSettings):
     app_name: str = "Guardrail AI Middleware"
     app_env: str = "development"
@@ -32,6 +56,14 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.1-8b-instant"
     llm_temperature: float = 0.2
+    models_local_only: bool = False
+
+    embedding_model_name: str = "all-MiniLM-L6-v2"
+    embedding_model_path: str = "./models/all-MiniLM-L6-v2"
+    prompt_injection_model_name: str = "protectai/deberta-v3-base-prompt-injection"
+    prompt_injection_model_path: str = "./models/deberta-v3-base-prompt-injection"
+    toxicity_model_name: str = "unitary/toxic-bert"
+    toxicity_model_path: str = "./models/toxic-bert"
 
     chroma_path: str = "./.chroma"
     chroma_collection: str = "jailbreak_patterns"
@@ -84,6 +116,48 @@ class Settings(BaseSettings):
     @property
     def resolved_jailbreak_seed_file(self) -> str:
         return resolve_runtime_path(self.jailbreak_seed_file)
+
+    @property
+    def resolved_embedding_model_path(self) -> str:
+        return resolve_optional_runtime_path(self.embedding_model_path)
+
+    @property
+    def resolved_prompt_injection_model_path(self) -> str:
+        return resolve_optional_runtime_path(self.prompt_injection_model_path)
+
+    @property
+    def resolved_toxicity_model_path(self) -> str:
+        return resolve_optional_runtime_path(self.toxicity_model_path)
+
+    @property
+    def embedding_model_ref(self) -> str:
+        if model_path_has_artifacts(self.resolved_embedding_model_path):
+            return self.resolved_embedding_model_path
+        return self.embedding_model_name
+
+    @property
+    def prompt_injection_model_ref(self) -> str:
+        if model_path_has_artifacts(self.resolved_prompt_injection_model_path):
+            return self.resolved_prompt_injection_model_path
+        return self.prompt_injection_model_name
+
+    @property
+    def toxicity_model_ref(self) -> str:
+        if model_path_has_artifacts(self.resolved_toxicity_model_path):
+            return self.resolved_toxicity_model_path
+        return self.toxicity_model_name
+
+    @property
+    def using_local_embedding_model(self) -> bool:
+        return self.embedding_model_ref == self.resolved_embedding_model_path and bool(self.resolved_embedding_model_path)
+
+    @property
+    def using_local_prompt_injection_model(self) -> bool:
+        return self.prompt_injection_model_ref == self.resolved_prompt_injection_model_path and bool(self.resolved_prompt_injection_model_path)
+
+    @property
+    def using_local_toxicity_model(self) -> bool:
+        return self.toxicity_model_ref == self.resolved_toxicity_model_path and bool(self.resolved_toxicity_model_path)
 
 
 @lru_cache

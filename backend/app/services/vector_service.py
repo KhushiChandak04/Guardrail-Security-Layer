@@ -111,13 +111,15 @@ class VectorMatch:
     score: float
 
 class VectorService:
-    def __init__(self, *, persist_path: str, collection_name: str, seed_file: str) -> None:
+    def __init__(self, *, persist_path: str, collection_name: str, seed_file: str, embedding_model: str) -> None:
         path = Path(persist_path)
         path.mkdir(parents=True, exist_ok=True)
         
         # Initialize Persistent Client
         self.client = chromadb.PersistentClient(path=str(path))
-        self.embedding_fn = SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+        self.embedding_model = embedding_model
+        logger.info("Loading vector embedding model: %s", self.embedding_model)
+        self.embedding_fn = SentenceTransformerEmbeddingFunction(model_name=self.embedding_model)
         
         self.collection = self.client.get_or_create_collection(
             name=collection_name,

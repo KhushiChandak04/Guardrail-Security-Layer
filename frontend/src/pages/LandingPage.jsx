@@ -6,6 +6,18 @@ import { useAuth } from "../hooks/useAuth.jsx";
 
 export default function LandingPage() {
   const { isAuthenticated } = useAuth();
+  const logoItems = [
+    { name: "ChatGPT", src: "/logos/chatgpt.png" },
+    { name: "Gemini", src: "/logos/gemini.png" },
+    { name: "Grok", src: "/logos/grok.png" },
+    { name: "Claude", src: "/logos/claude.png" },
+    { name: "Mistral", src: "/logos/mistral.png" },
+    { name: "Llama", src: "/logos/llama.png" },
+    { name: "Cohere", src: "/logos/cohere.png" },
+    { name: "Perplexity", src: "/logos/perplexity.png" },
+    { name: "DeepSeek", src: "/logos/deepseek.png" },
+    { name: "Qwen", src: "/logos/qwen.png" },
+  ];
 
   return (
     <div className="page">
@@ -41,12 +53,14 @@ export default function LandingPage() {
           AI SECURITY MIDDLEWARE
         </div>
         <h1
+          className="hero-title"
           style={{
             fontFamily: "'Playfair Display', serif",
-            fontSize: "2.8rem",
+            fontSize: "3.4rem",
+            fontWeight: 700,
             color: "var(--brown-dark)",
-            lineHeight: 1.2,
-            marginBottom: "1rem",
+            lineHeight: 1.15,
+            marginBottom: "1.25rem",
           }}
         >
           Secure AI Adoption
@@ -55,11 +69,12 @@ export default function LandingPage() {
         </h1>
         <p
           style={{
-            fontSize: "0.95rem",
+            fontSize: "1.05rem",
+            fontWeight: 500,
             color: "var(--brown-light)",
-            maxWidth: "420px",
-            lineHeight: 1.7,
-            marginBottom: "2rem",
+            maxWidth: "520px",
+            lineHeight: 1.75,
+            marginBottom: "2.25rem",
           }}
         >
           Protection for every GenAI application you build and deploy — with
@@ -82,16 +97,33 @@ export default function LandingPage() {
       </main>
       <footer
         style={{
-          position: "absolute",
-          bottom: 0,
+          marginTop: "auto",
           width: "100%",
           display: "flex",
-          justifyContent: "center",
-          paddingBottom: "1.5rem",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "1.5rem",
+          padding: "2rem 0 2.5rem",
           zIndex: 1,
         }}
       >
-        <div style={{ display: "flex", gap: "1.5rem" }}>
+        <div className="logo-marquee">
+          <div className="logo-track">
+            {logoItems.concat(logoItems).map((logo, idx) => (
+              <div key={`${logo.name}-${idx}`} className="logo-badge">
+                <img className="logo-image" src={logo.src} alt={logo.name} />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: "1.5rem",
+            flexWrap: "wrap",
+            justifyContent: "center",
+          }}
+        >
           <div className="feature-pill">
             <span
               className="dot"
@@ -132,6 +164,78 @@ export default function LandingPage() {
           height: 6px;
           border-radius: 50%;
           background-color: var(--dot-color);
+        }
+        .hero-title {
+          position: relative;
+          display: inline-block;
+          text-shadow: 0 8px 30px rgba(60, 40, 20, 0.25);
+        }
+        .hero-title::before {
+          content: "";
+          position: absolute;
+          top: -70%;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 160%;
+          height: 200%;
+          background: radial-gradient(
+            ellipse at top,
+            rgba(255, 226, 168, 0.8) 0%,
+            rgba(255, 226, 168, 0.35) 42%,
+            rgba(255, 226, 168, 0) 70%
+          );
+          filter: blur(6px);
+          z-index: -1;
+          pointer-events: none;
+        }
+        body.theme-dark .hero-title::before {
+          background: radial-gradient(
+            ellipse at top,
+            rgba(245, 210, 130, 0.55) 0%,
+            rgba(245, 210, 130, 0.22) 45%,
+            rgba(245, 210, 130, 0) 70%
+          );
+        }
+        .logo-marquee {
+          width: min(960px, 92%);
+          overflow: hidden;
+          mask-image: linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+        }
+        .logo-track {
+          display: flex;
+          gap: 1rem;
+          width: max-content;
+          animation: logoScroll 26s linear infinite;
+        }
+        .logo-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 88px;
+          height: 64px;
+          border-radius: 16px;
+          background: rgba(77, 56, 36, 0.85);
+          border: 1px solid rgba(217, 164, 65, 0.45);
+          box-shadow: 0 10px 18px rgba(92, 62, 30, 0.08);
+          transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+        }
+        .logo-badge:hover {
+          transform: translateY(-2px) scale(1.03);
+          box-shadow: 0 0 18px rgba(241, 199, 108, 0.85);
+          filter: drop-shadow(0 0 12px rgba(241, 199, 108, 0.6));
+        }
+        .logo-image {
+          width: 60px;
+          height: 38px;
+          object-fit: contain;
+          filter: grayscale(0.1) drop-shadow(0 2px 6px rgba(92, 62, 30, 0.25));
+        }
+        .logo-badge:hover .logo-image {
+          filter: drop-shadow(0 0 10px rgba(241, 199, 108, 0.9));
+        }
+        @keyframes logoScroll {
+          from { transform: translateX(0); }
+          to { transform: translateX(-50%); }
         }
       `}</style>
     </div>

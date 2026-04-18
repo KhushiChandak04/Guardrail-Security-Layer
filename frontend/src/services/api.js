@@ -1,45 +1,179 @@
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import { getFirebaseAuth } from "./firebase";
 
-async function fetchWithAuth(url, options = {}) {
-  const token = localStorage.getItem("underdog-token");
-  const headers = {
-    "Content-Type": "application/json",
-    ...options.headers,
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api").replace(/\/+$/, "");
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
+function withCacheBust(path) {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}_ts=${Date.now()}`;
+}
+
+function buildApiBaseCandidates() {
+  const seen = new Set();
+  const candidates = [];
+
+  const add = (value) => {
+    const normalized = String(value || "").trim().replace(/\/+$/, "");
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    candidates.push(normalized);
   };
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  add(API_BASE_URL);
+
+  if (typeof window !== "undefined") {
+    add(`${window.location.origin}/api`);
+
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+      add("http://127.0.0.1:8000/api");
+      add("http://localhost:8000/api");
+    }
   }
 
-  const response = await fetch(`${BASE_URL}${url}`, { ...options, headers });
+  add("http://127.0.0.1:8000/api");
+  add("http://localhost:8000/api");
 
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  return response.json();
+  return candidates;
 }
 
-export async function secureChat({ prompt, sessionId }) {
-  return fetchWithAuth("/api/secure-chat", {
+async function resolveCurrentIdToken() {
+  const auth = getFirebaseAuth();
+  if (!auth?.currentUser) {
+    return "";
+  }
+
+  try {
+    return await auth.currentUser.getIdToken();
+  } catch {
+    return "";
+  }
+}
+
+function buildErrorMessage(payload, status) {
+  if (payload && typeof payload === "object") {
+    if (typeof payload.detail === "string" && payload.detail) {
+      return payload.detail;
+    }
+    if (typeof payload.message === "string" && payload.message) {
+      return payload.message;
+    }
+  }
+  return `Request failed with status ${status}`;
+}
+
+async function request(path, { method = "GET", body, headers = {} } = {}) {
+  const apiBases = buildApiBaseCandidates();
+  let lastNetworkError = null;
+
+  for (const apiBase of apiBases) {
+    const url = `${apiBase}${path}`;
+    let response;
+
+    try {
+      response = await fetch(url, {
+        method,
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          ...NO_STORE_HEADERS,
+          ...headers,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (networkError) {
+      lastNetworkError = networkError;
+      continue;
+    }
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      throw new Error(buildErrorMessage(payload, response.status));
+    }
+
+    return payload;
+  }
+
+  if (lastNetworkError) {
+    throw new Error(
+      "Unable to reach backend API. Start backend server with `npm run dev:backend:stable` or set VITE_API_BASE_URL.",
+    );
+  }
+
+  throw new Error("Unable to reach backend API.");
+}
+
+export async function sendChatPrompt({ prompt, idToken, sessionId, metadata = {} }) {
+  const resolvedIdToken = idToken || await resolveCurrentIdToken();
+  const payload = {
+    prompt,
+    session_id: sessionId,
+    metadata,
+  };
+
+  if (resolvedIdToken) {
+    payload.id_token = resolvedIdToken;
+  }
+
+  return request("/chat", {
     method: "POST",
-    body: JSON.stringify({ prompt, session_id: sessionId }),
+    body: payload,
   });
 }
 
-export async function getLogs({ decision, level, search, limit, offset } = {}) {
-  const params = new URLSearchParams({
-    ...(decision && { decision }),
-    ...(level && { level }),
-    ...(search && { search }),
-    ...(limit && { limit }),
-    ...(offset && { offset }),
+export async function secureChat({ prompt, sessionId, metadata = {} }) {
+  return sendChatPrompt({
+    prompt,
+    sessionId,
+    metadata,
   });
-  return fetchWithAuth(`/api/logs?${params.toString()}`);
 }
 
-export async function getStats() {
-  return fetchWithAuth("/api/stats");
+export async function getLogs({ decision, level, search, limit = 25, offset = 0 } = {}) {
+  const params = new URLSearchParams();
+  if (decision && decision !== "all") {
+    params.set("decision", decision);
+  }
+  if (level && level !== "all") {
+    params.set("level", level);
+  }
+  if (search) {
+    params.set("search", search);
+  }
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+
+  return request(withCacheBust(`/logs?${params.toString()}`));
+}
+
+export async function getStats(limit = 250) {
+  return request(withCacheBust(`/stats?limit=${encodeURIComponent(String(limit))}`));
+}
+
+export async function getPolicies() {
+  return request(withCacheBust("/policies"));
+}
+
+export async function updatePolicies(payload) {
+  return request("/policies", {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function getGuardrailDiagnostics() {
+  return request(withCacheBust("/diagnostics/guardrails"));
 }
 
 export async function scanDocument(file) {

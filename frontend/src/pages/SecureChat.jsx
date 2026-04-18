@@ -1,16 +1,144 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useMemo, useState } from "react";
+
 import Sidebar from "../components/Sidebar";
 import { scanDocument } from "../services/api";
+import { useAuth } from "../hooks/useAuth.jsx";
+import { sendChatPrompt } from "../services/api";
+import { getFirebaseAuth } from "../services/firebase";
+
+const AUDIT_STORAGE_KEY = "underdog-audit-logs";
+const SESSION_STORAGE_KEY = "underdog_guardrail_session_id";
+
+const loadAuditLogs = () => {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(AUDIT_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (error) {
+    console.error("Failed to read audit logs", error);
+    return [];
+  }
+};
+
+const saveAuditLog = (entry) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const logs = loadAuditLogs();
+  const next = [entry, ...logs].slice(0, 200);
+  window.localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(next));
+};
+
+function getOrCreateSessionId() {
+  if (typeof window === "undefined") {
+    return crypto.randomUUID();
+  }
+
+  const existing = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  if (existing) {
+    return existing;
+  }
+
+  const nextSessionId = crypto.randomUUID();
+  window.localStorage.setItem(SESSION_STORAGE_KEY, nextSessionId);
+  return nextSessionId;
+}
+
+function riskLevelToScore(level) {
+  const normalized = String(level || "").toLowerCase();
+  if (normalized === "high") {
+    return 85;
+  }
+  if (normalized === "medium") {
+    return 60;
+  }
+  if (normalized === "low") {
+    return 20;
+  }
+  return 0;
+}
+
+function buildRiskSnapshot(result, sessionId) {
+  const blocked = Boolean(result?.blocked);
+  const redactions = Array.isArray(result?.redactions) ? result.redactions : [];
+  const decision = blocked ? "BLOCKED" : redactions.length > 0 ? "REDACTED" : "PASSED";
+  const riskLevel = blocked ? result?.ingress_risk : result?.output_risk;
+
+  return {
+    decision,
+    risk_score: riskLevelToScore(riskLevel),
+    risk_level: String(riskLevel || "low"),
+    reasons: blocked
+      ? [String(result?.message || "Request blocked by guardrails")]
+      : redactions.length > 0
+        ? redactions.map((field) => `Redacted ${field}`)
+        : ["No policy violations detected"],
+    detected_issues: blocked
+      ? [{ type: "Policy", detail: String(result?.ingress_risk || "high"), confidence: 1 }]
+      : redactions.map((field) => ({
+          type: "PII",
+          detail: String(field),
+          confidence: 1,
+        })),
+    sanitized_prompt: blocked ? "Blocked before model call" : "Forwarded to model",
+    llm_response: String(result?.message || ""),
+    output_clean: !blocked && redactions.length === 0,
+    pii_in_output: redactions,
+    request_id: String(result?.request_id || ""),
+    session_id: sessionId,
+    timestamp: String(result?.timestamp || new Date().toISOString()),
+    ingress_risk: String(result?.ingress_risk || "low"),
+    output_risk: String(result?.output_risk || "low"),
+  };
+}
+
+function persistAuditLog({ user, prompt, result, sessionId }) {
+  const blocked = Boolean(result?.blocked);
+  const redactions = Array.isArray(result?.redactions) ? result.redactions : [];
+
+  const decisionLabel = blocked ? "Blocked" : redactions.length > 0 ? "Redacted" : "Passed";
+  const displayName = String(user?.displayName || user?.email || "U");
+
+  saveAuditLog({
+    id: String(result?.request_id || crypto.randomUUID()),
+    request_id: String(result?.request_id || ""),
+    timestamp: String(result?.timestamp || new Date().toISOString()),
+    user: displayName.slice(0, 1).toUpperCase(),
+    user_id: String(user?.uid || "anonymous"),
+    email: String(user?.email || ""),
+    prompt,
+    input_text: prompt,
+    output_text: String(result?.message || ""),
+    risk_score: blocked
+      ? riskLevelToScore(result?.ingress_risk)
+      : riskLevelToScore(result?.output_risk),
+    input_risk_score: riskLevelToScore(result?.ingress_risk),
+    output_risk_score: riskLevelToScore(result?.output_risk),
+    decision: decisionLabel,
+    reason: blocked ? "blocked" : redactions.length > 0 ? "redacted" : "safe",
+    redacted_fields: redactions,
+    redacted: redactions.length > 0,
+    session_id: sessionId,
+    model: String(result?.llm?.model || "unknown"),
+  });
+}
 
 export default function SecureChat() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [currentRisk, setCurrentRisk] = useState(null);
+  const [error, setError] = useState("");
   const [scanResult, setScanResult] = useState(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scanNotice, setScanNotice] = useState("");
   const [hasPendingDocumentScan, setHasPendingDocumentScan] = useState(false);
+  const sessionId = useMemo(() => getOrCreateSessionId(), []);
   const fileInputRef = useRef(null);
 
   const handleAttachClick = () => {
@@ -24,6 +152,7 @@ export default function SecureChat() {
     if (!file) return;
 
     setScanLoading(true);
+    setError("");
     setScanNotice("Scanning document...");
 
     try {
@@ -47,54 +176,83 @@ export default function SecureChat() {
     }
   };
 
-  const sendMessage = (messageContent) => {
-    const userMessage = {
-      id: Date.now(),
-      role: "user",
-      content: messageContent,
-    };
+  const sendMessage = async (messageContent) => {
+    const prompt = String(messageContent || "").trim();
+    if (!prompt) {
+      return;
+    }
 
+    setError("");
+    const userMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: prompt,
+    };
     setMessages((prev) => [...prev, userMessage]);
     setInputText("");
     setIsLoading(true);
     setCurrentRisk(null);
 
-    // TODO: replace mock with real API call
-    // await api.secureChat({ prompt: messageContent })
-    setTimeout(() => {
-      const mockResponse = {
-        decision: "REDACT",
-        risk_score: 61,
-        risk_level: "high",
-        reasons: ["Aadhaar number detected", "PII in input"],
-        detected_issues: [
-          { type: "Indian PII", detail: "Aadhaar number", confidence: 0.98 },
-        ],
-        sanitized_prompt: messageContent,
-        llm_response: `Sure! For KYC you will need valid ID proof... (${messageContent})`,
-        output_clean: true,
-        pii_in_output: [],
-      };
+    try {
+      const auth = getFirebaseAuth();
+      const idToken = auth?.currentUser ? await auth.currentUser.getIdToken() : "";
 
-      setCurrentRisk(mockResponse);
+      const result = await sendChatPrompt({
+        prompt,
+        idToken,
+        sessionId,
+        metadata: {
+          source: "secure_chat_page",
+          client_timestamp: new Date().toISOString(),
+          prompt_length: String(prompt.length),
+          user_email: String(user?.email || ""),
+        },
+      });
 
-      const guardMessage = {
-        id: Date.now() + 1,
-        role: "guard",
-        decision: mockResponse.decision,
-        detectedIssues: mockResponse.detected_issues,
-      };
+      const blocked = Boolean(result?.blocked);
+      const redactions = Array.isArray(result?.redactions) ? result.redactions : [];
 
-      const assistantMessage = {
-        id: Date.now() + 2,
-        role: "assistant",
-        content: mockResponse.llm_response,
-        outputClean: mockResponse.output_clean,
-      };
+      if (blocked || redactions.length > 0) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "guard",
+            decision: blocked ? "BLOCKED" : "REDACTED",
+            detectedIssues: blocked
+              ? [{ type: "Policy", detail: String(result?.ingress_risk || "high") }]
+              : redactions.map((field) => ({ type: "PII", detail: String(field) })),
+          },
+        ]);
+      }
 
-      setMessages((prev) => [...prev, guardMessage, assistantMessage]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: String(result?.message || "Request blocked by guardrail policy."),
+          outputClean: !blocked && redactions.length === 0,
+        },
+      ]);
+
+      setCurrentRisk(buildRiskSnapshot(result, sessionId));
+      persistAuditLog({ user, prompt, result, sessionId });
+    } catch (requestError) {
+      const message = requestError?.message || "Unable to reach backend right now.";
+      setError(message);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: message,
+          outputClean: false,
+        },
+      ]);
+    } finally {
       setIsLoading(false);
-    }, 1200);
+    }
   };
 
   const handleSend = async () => {
@@ -114,7 +272,7 @@ export default function SecureChat() {
       setScanNotice("Sensitive data masked before sending");
     }
 
-    sendMessage(outgoingContent);
+    await sendMessage(outgoingContent);
     setHasPendingDocumentScan(false);
   };
 
@@ -131,10 +289,7 @@ export default function SecureChat() {
           marginLeft: "210px",
         }}
       >
-        {/* Left Panel */}
-        <div
-          style={{ display: "flex", flexDirection: "column", height: "100vh" }}
-        >
+        <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
           <header
             style={{
               padding: "1rem 1.25rem",
@@ -185,12 +340,25 @@ export default function SecureChat() {
                 borderRadius: "20px",
               }}
             >
-              Underdog is monitoring this conversation
+              Session ID: {sessionId}
             </div>
+            {messages.length === 0 ? (
+              <div
+                style={{
+                  alignSelf: "center",
+                  color: "var(--brown-light)",
+                  fontSize: "0.82rem",
+                  marginTop: "2rem",
+                }}
+              >
+                Start a conversation. Every prompt and response is logged in backend storage.
+              </div>
+            ) : null}
             {messages.map((msg) => {
-              if (msg.role === "user")
+              if (msg.role === "user") {
                 return <UserBubble key={msg.id} content={msg.content} />;
-              if (msg.role === "guard")
+              }
+              if (msg.role === "guard") {
                 return (
                   <GuardBubble
                     key={msg.id}
@@ -198,17 +366,19 @@ export default function SecureChat() {
                     detectedIssues={msg.detectedIssues}
                   />
                 );
-              if (msg.role === "assistant")
-                return (
-                  <AssistantBubble
-                    key={msg.id}
-                    content={msg.content}
-                    outputClean={msg.outputClean}
-                  />
-                );
-              return null;
+              }
+              return (
+                <AssistantBubble
+                  key={msg.id}
+                  content={msg.content}
+                  outputClean={Boolean(msg.outputClean)}
+                />
+              );
             })}
-            {isLoading && <div style={{ alignSelf: "flex-start" }}>...</div>}
+            {isLoading ? <div style={{ alignSelf: "flex-start" }}>...</div> : null}
+            {error ? (
+              <div style={{ color: "var(--danger)", fontSize: "0.78rem" }}>{error}</div>
+            ) : null}
           </div>
           <div
             style={{
@@ -243,10 +413,10 @@ export default function SecureChat() {
             </button>
             <textarea
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
+              onChange={(event) => setInputText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
                   handleSend();
                 }
               }}
@@ -286,7 +456,6 @@ export default function SecureChat() {
             )}
           </div>
         </div>
-        {/* Right Panel */}
         <Inspector risk={currentRisk} />
       </main>
     </div>
@@ -330,32 +499,11 @@ const GuardBubble = ({ decision, detectedIssues }) => (
         fontWeight: 600,
       }}
     >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M12 2L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 2Z"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      Guardrail intercepted
+      Guardrail decision: {decision}
     </div>
     <div style={{ marginTop: "4px" }}>
-      Detected: {detectedIssues.map((i) => i.type).join(", ")}
+      Detected: {detectedIssues.map((issue) => issue.detail || issue.type).join(", ") || "none"}
     </div>
-    <div style={{ marginTop: "4px" }}>
-      Action: <span className="badge badge-redacted">{decision}</span>
-    </div>
-    {decision === "REDACT" && (
-      <div style={{ marginTop: "4px" }}>Sanitised prompt sent to model</div>
-    )}
   </div>
 );
 
@@ -380,14 +528,12 @@ const AssistantBubble = ({ content, outputClean }) => (
         marginTop: "4px",
       }}
     >
-      {outputClean ? "Output scanned · Clean" : "Output: PII masked"}
+      {outputClean ? "Output scanned · Clean" : "Output scanned · Review required"}
     </div>
   </div>
 );
 
 const Inspector = ({ risk }) => {
-  const [isPromptVisible, setPromptVisible] = useState(false);
-
   if (!risk) {
     return (
       <div
@@ -401,7 +547,7 @@ const Inspector = ({ risk }) => {
         }}
       >
         <p style={{ color: "var(--brown-light)", fontSize: "0.85rem" }}>
-          Send a message to see guardrail analysis
+          Send a message to see guardrail analysis from live backend response.
         </p>
       </div>
     );
@@ -426,23 +572,9 @@ const Inspector = ({ risk }) => {
       }}
     >
       <h3 className="label-style">Guardrail Inspector</h3>
-
-      {/* Risk Score */}
       <div style={{ textAlign: "center" }}>
-        <svg
-          width="120"
-          height="120"
-          viewBox="0 0 36 36"
-          style={{ margin: "0 auto" }}
-        >
-          <circle
-            cx="18"
-            cy="18"
-            r="16"
-            fill="none"
-            stroke="var(--border)"
-            strokeWidth="3"
-          />
+        <svg width="120" height="120" viewBox="0 0 36 36" style={{ margin: "0 auto" }}>
+          <circle cx="18" cy="18" r="16" fill="none" stroke="var(--border)" strokeWidth="3" />
           <circle
             cx="18"
             cy="18"
@@ -453,176 +585,47 @@ const Inspector = ({ risk }) => {
             strokeDasharray={`${(risk.risk_score / 100) * 100.5} 100.5`}
             transform="rotate(-90 18 18)"
           />
-          <text
-            x="18"
-            y="22"
-            textAnchor="middle"
-            style={{
-              fontFamily: "'Playfair Display', serif",
-              fontSize: "10px",
-              fill: riskColor,
-            }}
-          >
+          <text x="18" y="20.5" textAnchor="middle" fontSize="8" fill={riskColor} fontWeight="700">
             {risk.risk_score}
           </text>
         </svg>
-        <div
-          className={`badge badge-${risk.risk_level}`}
-          style={{ marginTop: "0.5rem" }}
-        >
-          {risk.risk_level}
+        <div style={{ marginTop: "0.5rem" }}>
+          <span className={`badge badge-${risk.decision.toLowerCase()}`}>{risk.decision}</span>
         </div>
       </div>
 
-      {/* Detected Issues */}
       <div>
-        <h3 className="label-style">DETECTED ISSUES</h3>
-        {risk.detected_issues.length > 0 ? (
-          risk.detected_issues.map((issue, i) => (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                fontSize: "0.82rem",
-              }}
-            >
-              <span>
-                {issue.type}: {issue.detail}
-              </span>
-              <span
-                style={{
-                  marginLeft: "auto",
-                  color: "var(--brown-light)",
-                  fontSize: "0.75rem",
-                }}
-              >
-                {issue.confidence * 100}%
-              </span>
-            </div>
-          ))
-        ) : (
-          <p style={{ color: "var(--success-text)", fontSize: "0.82rem" }}>
-            No issues detected
-          </p>
-        )}
-      </div>
-
-      {/* Decision */}
-      <div>
-        <h3 className="label-style">DECISION</h3>
-        <div
-          className={`badge badge-${risk.decision.toLowerCase()}`}
-          style={{
-            width: "100%",
-            justifyContent: "center",
-            height: "40px",
-            fontSize: "0.9rem",
-          }}
-        >
-          {risk.decision}
+        <h4 className="label-style">Risk</h4>
+        <div className="card" style={{ padding: "0.75rem" }}>
+          <div>Ingress: {risk.ingress_risk}</div>
+          <div>Output: {risk.output_risk}</div>
+          <div>Session: {risk.session_id}</div>
+          <div>Request: {risk.request_id || "n/a"}</div>
         </div>
       </div>
 
-      {/* What was sent to LLM */}
       <div>
-        <button
-          onClick={() => setPromptVisible(!isPromptVisible)}
-          style={{
-            width: "100%",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            border: "1px solid var(--border)",
-            borderRadius: "8px",
-            padding: "8px 12px",
-            background: "transparent",
-            cursor: "pointer",
-            color: "var(--brown-dark)",
-          }}
-        >
-          What was sent to LLM
-          <span>{isPromptVisible ? "▲" : "▼"}</span>
-        </button>
-        {isPromptVisible && (
-          <div
-            style={{
-              background: "var(--cream)",
-              border: "1px solid var(--border)",
-              borderRadius: "8px",
-              padding: "0.75rem",
-              fontFamily: "monospace",
-              fontSize: "0.78rem",
-              color: "var(--brown-mid)",
-              lineHeight: 1.6,
-              marginTop: "0.5rem",
-            }}
-          >
-            {risk.sanitized_prompt}
-          </div>
-        )}
+        <h4 className="label-style">Detected Issues</h4>
+        <div className="card" style={{ padding: "0.75rem", fontFamily: "monospace" }}>
+          {risk.detected_issues.length > 0
+            ? risk.detected_issues.map((issue) => `${issue.type}: ${issue.detail}`).join("\n")
+            : "No explicit issue labels returned"}
+        </div>
       </div>
 
-      {/* Output Check */}
       <div>
-        <h3 className="label-style">OUTPUT CHECK</h3>
-        <div
-          style={{
-            fontSize: "0.8rem",
-            display: "flex",
-            justifyContent: "space-between",
-          }}
-        >
-          <span>PII in response</span>
-          <span
-            style={{
-              color:
-                risk.pii_in_output.length === 0
-                  ? "var(--success-text)"
-                  : "var(--danger-text)",
-            }}
-          >
-            {risk.pii_in_output.length === 0
-              ? "None found"
-              : `${risk.pii_in_output.length} found`}
-          </span>
-        </div>
-        <div
-          style={{
-            fontSize: "0.8rem",
-            display: "flex",
-            justifyContent: "space-between",
-          }}
-        >
-          <span>Secrets detected</span>
-          <span style={{ color: "var(--success-text)" }}>None</span>
-        </div>
-        <div
-          style={{
-            fontSize: "0.8rem",
-            display: "flex",
-            justifyContent: "space-between",
-          }}
-        >
-          <span>Toxicity score</span>
-          <span style={{ color: "var(--success-text)" }}>0.02 · Clean</span>
+        <h4 className="label-style">Redactions</h4>
+        <div className="card" style={{ padding: "0.75rem", fontFamily: "monospace" }}>
+          {risk.pii_in_output.length > 0 ? risk.pii_in_output.join(", ") : "None"}
         </div>
       </div>
-      <style>{`
-                .label-style {
-                    font-size: 0.75rem;
-                    font-weight: 500;
-                    text-transform: uppercase;
-                    letter-spacing: 0.08em;
-                    color: var(--brown-light);
-                    margin-bottom: 0.75rem;
-                }
-                .badge-high { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning); }
-                .badge-redact { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning); }
-                .badge-blocked { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger); }
-                .badge-allowed { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success); }
-            `}</style>
+
+      <div>
+        <h4 className="label-style">Model Output</h4>
+        <div className="card" style={{ padding: "0.75rem", lineHeight: 1.6 }}>
+          {risk.llm_response || "No output"}
+        </div>
+      </div>
     </div>
   );
 };

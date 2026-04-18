@@ -1,26 +1,53 @@
 import asyncio
-from transformers import pipeline
 import logging
+
+from transformers import pipeline
 
 logger = logging.getLogger(__name__)
 
+
 class MLEnsembleDetector:
-    def __init__(self):
-        logger.info("Loading ML Ensemble (DeBERTa + Toxic-BERT)...")
-        # 1. The Jailbreak/Injection Model
-        self.injection_pipe = pipeline(
-            "text-classification",
-            model="protectai/deberta-v3-base-prompt-injection",
-            device=-1  # Use 0 if you have a local Nvidia GPU available
+    def __init__(
+        self,
+        *,
+        injection_model: str,
+        toxicity_model: str,
+        local_files_only: bool = False,
+        device: int = -1,
+    ):
+        self.injection_model = injection_model
+        self.toxicity_model = toxicity_model
+        self.local_files_only = local_files_only
+        self.device = device
+
+        logger.info(
+            "Loading ML ensemble models (local_only=%s): injection=%s toxicity=%s",
+            self.local_files_only,
+            self.injection_model,
+            self.toxicity_model,
         )
-        
-        # 2. The Harm/Toxicity Model
-        self.toxicity_pipe = pipeline(
-            "text-classification",
-            model="unitary/toxic-bert",
-            device=-1
-        )
+
+        self.injection_pipe = self._load_text_classifier(self.injection_model)
+        self.toxicity_pipe = self._load_text_classifier(self.toxicity_model)
         logger.info("ML Ensemble loaded successfully.")
+
+    def _load_text_classifier(self, model_reference: str):
+        try:
+            return pipeline(
+                "text-classification",
+                model=model_reference,
+                tokenizer=model_reference,
+                local_files_only=self.local_files_only,
+                device=self.device,
+            )
+        except Exception:
+            # Some local exports can be loaded with model-only reference.
+            return pipeline(
+                "text-classification",
+                model=model_reference,
+                local_files_only=self.local_files_only,
+                device=self.device,
+            )
 
     def _run_injection(self, text: str) -> dict:
         result = self.injection_pipe(text)[0]

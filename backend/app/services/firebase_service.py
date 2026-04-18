@@ -40,6 +40,7 @@ class FirebaseService:
         self.ingress_block_threshold = max(0, min(100, ingress_block_threshold))
         self.ingress_sanitize_threshold = max(0, min(100, ingress_sanitize_threshold))
         self.jailbreak_similarity_threshold = max(0.0, min(1.0, jailbreak_similarity_threshold))
+        self._local_policy_overrides: dict[str, object] = {}
         self.local_interactions: list[dict] = []
         self._schema_bootstrapped = False
         self.db = None
@@ -232,17 +233,25 @@ class FirebaseService:
     def _runtime_guardrail_snapshot(self) -> dict[str, object]:
         threat_patterns = self._build_threat_pattern_documents(datetime.now(timezone.utc).isoformat())
         block_categories = sorted({pattern["type"] for pattern in threat_patterns})
+        policy = {
+            "max_risk_score": self.ingress_block_threshold,
+            "sanitize_risk_score": self.ingress_sanitize_threshold,
+            "jailbreak_similarity_threshold": self.jailbreak_similarity_threshold,
+            "block_categories": block_categories,
+            "blocked_topics": [],
+            "pii_detection": {},
+            "redact_pii": True,
+            "honeypot_mode": False,
+            "multi_turn_tracking": True,
+        }
+
+        for key, value in self._local_policy_overrides.items():
+            policy[key] = value
 
         return {
             "source": "runtime",
             "policy_document_found": False,
-            "policy": {
-                "max_risk_score": self.ingress_block_threshold,
-                "sanitize_risk_score": self.ingress_sanitize_threshold,
-                "jailbreak_similarity_threshold": self.jailbreak_similarity_threshold,
-                "block_categories": block_categories,
-                "redact_pii": True,
-            },
+            "policy": policy,
             "threat_pattern_count": len(threat_patterns),
         }
 
@@ -576,3 +585,211 @@ class FirebaseService:
             logger.warning("Firestore read failed. Falling back to local mode. Details: %s", error)
             self.enabled = False
             return self.local_interactions[:limit]
+
+    async def fetch_policy_config(self) -> dict[str, object]:
+        snapshot = await self.fetch_guardrail_snapshot()
+        policy_data = snapshot.get("policy")
+        if not isinstance(policy_data, dict):
+            policy_data = {}
+
+        block_categories = policy_data.get("block_categories", [])
+        if isinstance(block_categories, list):
+            normalized_categories = sorted({str(item) for item in block_categories if str(item)})
+        else:
+            normalized_categories = []
+
+        blocked_topics = policy_data.get("blocked_topics", [])
+        if isinstance(blocked_topics, list):
+            normalized_topics = sorted({str(item).strip() for item in blocked_topics if str(item).strip()})
+        else:
+            normalized_topics = []
+
+        raw_pii_detection = policy_data.get("pii_detection", {})
+        pii_detection: dict[str, bool] = {}
+        if isinstance(raw_pii_detection, dict):
+            pii_detection = {
+                str(key): bool(value)
+                for key, value in raw_pii_detection.items()
+                if str(key).strip()
+            }
+
+        return {
+            "source": snapshot.get("source", "runtime"),
+            "policy_document_found": bool(snapshot.get("policy_document_found", False)),
+            "policy": {
+                "max_risk_score": int(policy_data.get("max_risk_score", self.ingress_block_threshold)),
+                "sanitize_risk_score": int(policy_data.get("sanitize_risk_score", self.ingress_sanitize_threshold)),
+                "jailbreak_similarity_threshold": float(
+                    policy_data.get("jailbreak_similarity_threshold", self.jailbreak_similarity_threshold)
+                ),
+                "block_categories": normalized_categories,
+                "blocked_topics": normalized_topics,
+                "pii_detection": pii_detection,
+                "redact_pii": bool(policy_data.get("redact_pii", True)),
+                "honeypot_mode": bool(policy_data.get("honeypot_mode", False)),
+                "multi_turn_tracking": bool(policy_data.get("multi_turn_tracking", True)),
+            },
+        }
+
+    async def update_policy_config(
+        self,
+        *,
+        max_risk_score: int,
+        sanitize_risk_score: int,
+        redact_pii: bool,
+        block_categories: list[str],
+        blocked_topics: list[str],
+        pii_detection: dict[str, bool],
+        honeypot_mode: bool,
+        multi_turn_tracking: bool,
+    ) -> dict[str, object]:
+        normalized_max = max(0, min(100, int(max_risk_score)))
+        normalized_sanitize = max(0, min(normalized_max, int(sanitize_risk_score)))
+        normalized_categories = sorted({category.strip() for category in block_categories if category.strip()})
+        normalized_topics = sorted({topic.strip() for topic in blocked_topics if topic.strip()})
+        normalized_pii_detection = {
+            str(key): bool(value)
+            for key, value in pii_detection.items()
+            if str(key).strip()
+        }
+
+        # Keep runtime thresholds aligned with the latest saved policy.
+        self.ingress_block_threshold = normalized_max
+        self.ingress_sanitize_threshold = normalized_sanitize
+
+        self._local_policy_overrides = {
+            "max_risk_score": normalized_max,
+            "sanitize_risk_score": normalized_sanitize,
+            "redact_pii": bool(redact_pii),
+            "block_categories": normalized_categories,
+            "blocked_topics": normalized_topics,
+            "pii_detection": normalized_pii_detection,
+            "honeypot_mode": bool(honeypot_mode),
+            "multi_turn_tracking": bool(multi_turn_tracking),
+            "jailbreak_similarity_threshold": self.jailbreak_similarity_threshold,
+        }
+
+        if self.enabled:
+            await self.ensure_schema_initialized()
+            db = self.db
+            timestamp = datetime.now(timezone.utc).isoformat()
+
+            def _write_policy() -> None:
+                if db is None:
+                    raise RuntimeError("Firestore client is not initialized.")
+
+                db.collection(self.policies_collection).document("default_policy").set(
+                    {
+                        "policy_name": "default_policy",
+                        "max_risk_score": normalized_max,
+                        "sanitize_risk_score": normalized_sanitize,
+                        "jailbreak_similarity_threshold": self.jailbreak_similarity_threshold,
+                        "block_categories": normalized_categories,
+                        "blocked_topics": normalized_topics,
+                        "pii_detection": normalized_pii_detection,
+                        "redact_pii": bool(redact_pii),
+                        "honeypot_mode": bool(honeypot_mode),
+                        "multi_turn_tracking": bool(multi_turn_tracking),
+                        "updated_at": timestamp,
+                    },
+                    merge=True,
+                )
+
+            try:
+                await asyncio.to_thread(_write_policy)
+            except Exception as error:
+                logger.warning("Firestore policy update failed. Falling back to runtime mode. Details: %s", error)
+                self.enabled = False
+
+        return await self.fetch_policy_config()
+
+    def _parse_log_timestamp(self, item: dict) -> datetime:
+        raw_timestamp = item.get("timestamp_iso") or item.get("timestamp")
+        if isinstance(raw_timestamp, datetime):
+            if raw_timestamp.tzinfo is None:
+                return raw_timestamp.replace(tzinfo=timezone.utc)
+            return raw_timestamp
+
+        if isinstance(raw_timestamp, str):
+            try:
+                parsed = datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    return parsed.replace(tzinfo=timezone.utc)
+                return parsed
+            except ValueError:
+                pass
+
+        return datetime.now(timezone.utc)
+
+    async def fetch_stats(self, limit: int = 250) -> dict[str, object]:
+        logs = await self.fetch_recent(limit=max(1, min(limit, 500)))
+        now = datetime.now(timezone.utc)
+        today = now.date()
+
+        blocked = 0
+        redacted = 0
+        allowed = 0
+        prompts_today = 0
+        session_ids: set[str] = set()
+        latencies: list[int] = []
+        attack_counts: dict[str, int] = {}
+        pii_redaction_counts: dict[str, int] = {}
+
+        for item in logs:
+            decision = str(item.get("decision", "")).lower()
+            timestamp = self._parse_log_timestamp(item)
+            if timestamp.date() == today:
+                prompts_today += 1
+
+            if decision == "blocked":
+                blocked += 1
+            elif decision == "modified" or bool(item.get("redacted", False)):
+                redacted += 1
+            else:
+                allowed += 1
+
+            session_id = str(item.get("session_id", "")).strip()
+            if session_id:
+                session_ids.add(session_id)
+
+            llm_data = item.get("llm")
+            if isinstance(llm_data, dict):
+                latency_ms = llm_data.get("latency_ms")
+                if isinstance(latency_ms, (int, float)):
+                    latencies.append(int(latency_ms))
+
+            input_flags = item.get("input_flags")
+            if isinstance(input_flags, list):
+                for flag in input_flags:
+                    normalized_flag = str(flag).strip().lower()
+                    if normalized_flag:
+                        attack_counts[normalized_flag] = attack_counts.get(normalized_flag, 0) + 1
+
+            output_analysis = item.get("output_analysis")
+            if isinstance(output_analysis, dict):
+                redacted_fields = output_analysis.get("redacted_fields")
+                if isinstance(redacted_fields, list):
+                    for field in redacted_fields:
+                        normalized_field = str(field).strip()
+                        if normalized_field:
+                            pii_redaction_counts[normalized_field] = pii_redaction_counts.get(normalized_field, 0) + 1
+
+        total = len(logs)
+        clean_rate = round((allowed / total) * 100, 1) if total else 0.0
+        attack_rate = round((blocked / total) * 100, 1) if total else 0.0
+        avg_latency_ms = round(sum(latencies) / len(latencies), 1) if latencies else 0.0
+
+        return {
+            "source": "firestore" if self.enabled else "local",
+            "recent_count": total,
+            "prompts_today": prompts_today,
+            "blocked": blocked,
+            "pii_redacted": redacted,
+            "safe_passed": allowed,
+            "clean_rate": clean_rate,
+            "avg_latency_ms": avg_latency_ms,
+            "active_sessions": len(session_ids),
+            "attack_rate": attack_rate,
+            "attack_counts": attack_counts,
+            "pii_redaction_counts": pii_redaction_counts,
+        }

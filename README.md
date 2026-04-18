@@ -140,6 +140,13 @@ ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 
 GROQ_API_KEY=
 GROQ_MODEL=llama-3.1-8b-instant
+MODELS_LOCAL_ONLY=true
+EMBEDDING_MODEL_NAME=all-MiniLM-L6-v2
+EMBEDDING_MODEL_PATH=./models/all-MiniLM-L6-v2
+PROMPT_INJECTION_MODEL_NAME=protectai/deberta-v3-base-prompt-injection
+PROMPT_INJECTION_MODEL_PATH=./models/deberta-v3-base-prompt-injection
+TOXICITY_MODEL_NAME=unitary/toxic-bert
+TOXICITY_MODEL_PATH=./models/toxic-bert
 
 CHROMA_PATH=./.chroma
 CHROMA_COLLECTION=jailbreak_patterns
@@ -157,6 +164,18 @@ FIRESTORE_POLICIES_COLLECTION=policies
 FIRESTORE_THREAT_PATTERNS_COLLECTION=threat_patterns
 FIRESTORE_ANALYTICS_CACHE_COLLECTION=analytics_cache
 ```
+
+4.3.1 Local model setup (repo-first, no runtime HF download):
+
+```powershell
+$env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\setup_local_models.py
+```
+
+This command populates these folders inside the repository:
+
+- backend/models/all-MiniLM-L6-v2
+- backend/models/deberta-v3-base-prompt-injection
+- backend/models/toxic-bert
 
 Step 4: Initialize Firebase in backend (already added in codebase)
 

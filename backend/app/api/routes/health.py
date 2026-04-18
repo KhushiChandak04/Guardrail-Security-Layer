@@ -16,6 +16,8 @@ async def root_status() -> dict[str, object]:
             "scan_document": "/scan-document",
             "guardrail_diagnostics": "/api/diagnostics/guardrails",
             "logs": "/api/logs",
+            "stats": "/api/stats",
+            "policies": "/api/policies",
             "docs": "/docs",
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
