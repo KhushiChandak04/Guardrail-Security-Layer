@@ -15,7 +15,9 @@
     "dev:dashboard": "npm run dev --workspace @guardrail/dashboard",
     "dev:extension": "npm run dev --workspace @guardrail/extension",
     "build": "npm run build --workspaces",
-    "lint": "npm run lint --workspaces"
+    "lint": "npm run lint --workspaces",
+    "security:scan": "powershell -ExecutionPolicy Bypass -File scripts/scan_secrets.ps1",
+    "security:scan-history": "powershell -ExecutionPolicy Bypass -File scripts/scan_secrets.ps1 -ScanHistory"
   },
   "engines": {
     "node": ">=20.0.0",

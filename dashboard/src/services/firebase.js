@@ -2,24 +2,14 @@ import { getApp, getApps, initializeApp } from "firebase/app"
 import { getAnalytics, isSupported } from "firebase/analytics"
 import { getFirestore } from "firebase/firestore"
 
-const FIREBASE_WEB_CONFIG = {
-  apiKey: "AIzaSyBo9hKh0xt_9L9gI3SfWzIQT8a2DN6MhP0",
-  authDomain: "guardrail-security-layer.firebaseapp.com",
-  projectId: "guardrail-security-layer",
-  storageBucket: "guardrail-security-layer.firebasestorage.app",
-  messagingSenderId: "428591962866",
-  appId: "1:428591962866:web:e53578084b4f2258dece6b",
-  measurementId: "G-X0P16ZYQY5",
-}
-
 const firebaseConfig = {
-  apiKey: FIREBASE_WEB_CONFIG.apiKey,
-  authDomain: FIREBASE_WEB_CONFIG.authDomain,
-  projectId: FIREBASE_WEB_CONFIG.projectId,
-  storageBucket: FIREBASE_WEB_CONFIG.storageBucket,
-  messagingSenderId: FIREBASE_WEB_CONFIG.messagingSenderId,
-  appId: FIREBASE_WEB_CONFIG.appId,
-  measurementId: FIREBASE_WEB_CONFIG.measurementId,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 }
 
 let analyticsPromise = null

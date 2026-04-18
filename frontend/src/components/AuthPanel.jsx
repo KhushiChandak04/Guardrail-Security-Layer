@@ -32,7 +32,7 @@ export default function AuthPanel() {
 
   const handleGoogleSignIn = async () => {
     if (!auth) {
-      setError("Firebase auth config is missing in frontend/src/services/firebase.js")
+      setError("Firebase auth config is missing in frontend/.env")
       return
     }
 
@@ -50,7 +50,7 @@ export default function AuthPanel() {
   const handleEmailAuth = async (event) => {
     event.preventDefault()
     if (!auth) {
-      setError("Firebase auth config is missing in frontend/src/services/firebase.js")
+      setError("Firebase auth config is missing in frontend/.env")
       return
     }
 

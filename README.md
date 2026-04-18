@@ -123,13 +123,17 @@ Project details for this repository:
 
 4.2 Environment policy used in this repo:
 
-- Only one runtime env file is used: `backend/.env`.
-- Frontend and dashboard use the Firebase web config constants already committed in source.
-- `backend/.env` and service-account JSON files are gitignored.
+- Runtime env files used:
+  - `backend/.env`
+  - `frontend/.env`
+  - `dashboard/.env`
+- All `.env` files and service-account JSON files are gitignored.
 
 Required env files and locations:
 
 - backend/.env
+- frontend/.env
+- dashboard/.env
 
 4.3 backend/.env values:
 
@@ -176,9 +180,9 @@ If successful, Firestore gets a `test` collection document with `{"hello": "worl
 
 4.4 Frontend + dashboard Firebase web config:
 
-- Values from your Firebase web app are stored in:
-  - dashboard/src/services/firebase.js
-  - frontend/src/services/firebase.js
+- Values from your Firebase web app are loaded from:
+  - frontend/.env (VITE_FIREBASE_*)
+  - dashboard/.env (NEXT_PUBLIC_FIREBASE_*)
 - These are Firebase client config values (public identifiers), not private keys.
 - Do not place service-account JSON or other backend secrets in frontend/dashboard source.
 
@@ -252,6 +256,18 @@ Frontend + dashboard production build check:
 ```powershell
 npm run build --workspace @guardrail/frontend
 npm run build --workspace @guardrail/dashboard
+```
+
+Secret safety check (before push):
+
+```powershell
+npm run security:scan
+```
+
+Optional full-history check:
+
+```powershell
+npm run security:scan-history
 ```
 
 ## Upgrade Commands To Match Full Blueprint Exactly
