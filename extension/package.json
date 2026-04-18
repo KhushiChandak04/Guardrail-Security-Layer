@@ -1,0 +1,9 @@
+{
+  "name": "@guardrail/extension",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"Load extension folder manually in chrome://extensions for now\"",
+    "build": "echo \"No bundling configured yet\""
+  }
+}

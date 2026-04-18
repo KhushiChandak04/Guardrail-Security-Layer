@@ -1,0 +1,50 @@
+from functools import lru_cache
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    app_name: str = "Guardrail AI Middleware"
+    app_env: str = "development"
+    app_host: str = "0.0.0.0"
+    app_port: int = 8000
+    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.1-8b-instant"
+    llm_temperature: float = 0.2
+
+    chroma_path: str = "./.chroma"
+    chroma_collection: str = "jailbreak_patterns"
+    jailbreak_similarity_threshold: float = 0.79
+    jailbreak_seed_file: str = "./app/data/jailbreak_seed.txt"
+
+    firebase_project_id: str = ""
+    firebase_credentials_path: str = ""
+    firestore_collection: str = "guardrail_incidents"
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    @field_validator("llm_temperature")
+    @classmethod
+    def validate_temperature(cls, value: float) -> float:
+        return max(0.0, min(1.0, value))
+
+    @property
+    def cors_origins(self) -> list[str]:
+        origins = [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+        return origins or ["*"]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

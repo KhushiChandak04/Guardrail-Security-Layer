@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GuardrailPolicy",
+  "type": "object",
+  "properties": {
+    "jailbreak_similarity_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "block_high_risk": {
+      "type": "boolean"
+    }
+  },
+  "required": ["jailbreak_similarity_threshold", "block_high_risk"]
+}
