@@ -47,6 +47,7 @@ export default function LandingPage() {
             color: "var(--brown-light)",
             letterSpacing: "0.1em",
             textTransform: "uppercase",
+            marginTop: "1rem",
             marginBottom: "1.5rem",
           }}
         >
@@ -116,55 +117,9 @@ export default function LandingPage() {
             ))}
           </div>
         </div>
-        <div
-          style={{
-            display: "flex",
-            gap: "1.5rem",
-            flexWrap: "wrap",
-            justifyContent: "center",
-          }}
-        >
-          <div className="feature-pill">
-            <span
-              className="dot"
-              style={{ "--dot-color": "var(--danger)" }}
-            ></span>
-            Input Guard
-          </div>
-          <div className="feature-pill">
-            <span
-              className="dot"
-              style={{ "--dot-color": "var(--success)" }}
-            ></span>
-            Output Guard
-          </div>
-          <div className="feature-pill">
-            <span
-              className="dot"
-              style={{ "--dot-color": "var(--gold)" }}
-            ></span>
-            Audit Logs
-          </div>
-        </div>
+        
       </footer>
       <style>{`
-        .feature-pill {
-          border: 1px solid var(--border);
-          background: var(--surface);
-          padding: 6px 16px;
-          border-radius: 20px;
-          font-size: 0.75rem;
-          color: var(--brown-light);
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .feature-pill .dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background-color: var(--dot-color);
-        }
         .hero-title {
           position: relative;
           display: inline-block;
@@ -211,11 +166,11 @@ export default function LandingPage() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 88px;
-          height: 64px;
-          border-radius: 16px;
-          background: rgba(77, 56, 36, 0.85);
-          border: 1px solid rgba(217, 164, 65, 0.45);
+          width: 112px;
+          height: 80px;
+          border-radius: 0;
+          background: transparent;
+          border: none;
           box-shadow: 0 10px 18px rgba(92, 62, 30, 0.08);
           transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
         }
@@ -225,8 +180,8 @@ export default function LandingPage() {
           filter: drop-shadow(0 0 12px rgba(241, 199, 108, 0.6));
         }
         .logo-image {
-          width: 60px;
-          height: 38px;
+          width: 78px;
+          height: 52px;
           object-fit: contain;
           filter: grayscale(0.1) drop-shadow(0 2px 6px rgba(92, 62, 30, 0.25));
         }
