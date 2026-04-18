@@ -1,3 +1,5 @@
+#paste this into gitignore 
+
 # Node
 node_modules/
 npm-debug.log*

@@ -1,14 +1,12 @@
-import React from "react"
-import { createRoot } from "react-dom/client"
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App.jsx";
 
-import { ChatProvider } from "./context/ChatContext"
-import Home from "./pages/Home"
-import "./styles/globals.css"
+// Reset any leftover global styles
+import "./index.css";
 
 createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <ChatProvider>
-      <Home />
-    </ChatProvider>
-  </React.StrictMode>
-)
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
