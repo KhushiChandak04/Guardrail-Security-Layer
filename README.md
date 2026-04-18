@@ -4,105 +4,222 @@ Bidirectional guardrail middleware for GenAI applications.
 
 ## Hackathon Problem Statement
 
-GenAI copilots are vulnerable in two directions:
+GenAI copilots are vulnerable in both traffic directions.
 
-1. Ingress risk: users can attempt prompt injection, jailbreaks, abuse, and policy bypass.
-2. Egress risk: model responses can leak PII, hallucinate unsafe guidance, or violate policy.
+1. Ingress (user -> model): prompt injection, jailbreak attempts, abuse instructions.
+2. Egress (model -> user): PII leakage, unsafe responses, hallucinated risky content.
 
-Most demos secure only one side. This project solves both sides with a single middleware layer that can be dropped in front of any chatbot stack.
+This project places a middleware checkpoint between users and foundation models to inspect, score, and optionally block or redact traffic in both directions.
 
-## What This Project Delivers
+## Bidirectional Security Flow
 
-- Real-time ingress checks before LLM execution.
-- Real-time egress checks and redaction before user delivery.
-- Risk scoring and allow/block decisioning.
-- Incident logging for auditability and dashboard visibility.
-- SDK and extension scaffolds for quick integrations.
-
-## Why It Fits a Hackathon
-
-- Clear, high-impact problem with immediate business relevance.
-- End-to-end demonstrable flow (attack attempt, policy block, and forensic log trail).
-- Practical architecture that teams can extend after judging.
-
-## System Flow
-
-1. Client sends prompt to backend.
-2. Ingress guardrails inspect text (injection, toxicity, jailbreak similarity, regex policies).
-3. Decision engine assigns risk and either blocks or allows.
-4. Allowed prompt goes to LLM service.
-5. Egress guardrails inspect output (PII/hallucination/policy checks).
-6. Sensitive content is redacted when needed.
-7. Final response + incident metadata are returned and logged.
+1. Client prompt arrives at middleware.
+2. Ingress checks run (regex, toxicity, vector similarity to jailbreak corpus).
+3. Prompt is blocked or forwarded to LLM.
+4. LLM response returns to middleware.
+5. Egress checks run (PII detection/redaction, risk scoring).
+6. Safe response is returned to client.
+7. Incident logs are written for auditing and dashboard monitoring.
 
 ## Monorepo Layout
 
 ```text
 Guardrail-Security-Layer/
-  backend/      # FastAPI guardrail middleware and tests
-  frontend/     # React (Vite) chat demo UI
-  dashboard/    # Next.js admin and analytics UI
-  extension/    # Browser extension scaffold (MV3)
-  sdk/          # Python + JavaScript client starters
-  shared/       # Shared schema/constants
-  docs/         # Architecture, API, setup, and demo notes
+  backend/      # FastAPI guardrail middleware + tests
+  frontend/     # React (Vite) chat UI
+  dashboard/    # Next.js admin dashboard
+  extension/    # Browser extension scaffold (currently MV3 baseline)
+  sdk/          # Python + JavaScript SDK starters
+  shared/       # Shared schemas/constants
+  docs/         # Architecture, API, setup, demo notes
 ```
 
-## Tech Stack
+## Stack Coverage (Current State)
 
-- Backend: FastAPI, Pydantic Settings, ChromaDB, SentenceTransformers, Presidio, Groq SDK, Firebase Admin
-- Frontend: React + Vite + Axios
-- Dashboard: Next.js + Recharts + Firebase client
-- Tooling: npm workspaces, pytest
+### Part A: Browser Extension (Client UI)
 
-## Dependency Hygiene Rules
+- MV3 extension scaffold: implemented.
+- React popup runtime via Plasmo: not yet implemented (currently scaffold scripts only).
+- Tailwind in extension: not yet implemented.
+- Shadow DOM isolation: not yet implemented.
+- Firebase Auth in extension: not yet implemented.
+- WebSocket helper: scaffolded.
 
-- Python dependencies are installed only from backend/requirements.txt into root .venv.
-- Node dependencies are installed from repository root via npm workspaces.
-- Do not run standalone npm install inside frontend/dashboard/extension unless intentionally debugging one workspace.
+### Part B: Admin Dashboard (Command Center)
 
-Reference install commands:
+- Next.js + React: implemented.
+- Recharts visualizations: implemented.
+- Firebase client initialization: implemented.
+- Firestore onSnapshot live listeners: not yet implemented (current incident table is static sample data).
+- shadcn/ui component system: not yet implemented.
+
+### Part C: Middleware (Brain + Security Hub)
+
+- FastAPI core API + WS route: implemented.
+- ChromaDB + SentenceTransformers ingress similarity checks: implemented.
+- Presidio analyzer-based PII detection: implemented.
+- Groq integration with safe fallback mode: implemented.
+- Firebase Admin token/log pipeline with local fallback: implemented.
+
+## Tech Stack (Target Blueprint)
+
+- Extension: Plasmo, React, Tailwind CSS, Shadow DOM, Firebase Auth client, WebSockets
+- Dashboard: Next.js, shadcn/ui, Recharts, Firestore onSnapshot
+- Middleware: FastAPI, ChromaDB, SentenceTransformers, Presidio, Groq API, Firebase Admin SDK
+
+## Scratch Setup For Team (End-To-End)
+
+### 1) Clone + Prerequisites
+
+Required:
+
+- Windows PowerShell
+- Python 3.11+
+- Node.js 20+
+- npm 10+
+
+```powershell
+git clone <your-repo-url>
+cd Guardrail-Security-Layer
+```
+
+### 2) Python Environment + Backend Dependencies
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r backend\requirements.txt
+```
+
+Optional (improves Presidio NLP quality):
+
+```powershell
+python -m spacy download en_core_web_lg
+```
+
+### 3) Node Workspaces Install (Frontend, Dashboard, Extension, SDK JS)
+
+```powershell
 npm install
 ```
 
-## Environment Setup
+### 4) Firebase Setup + Environment Files
 
-Create local env files:
+Project details for this repository:
 
-```powershell
-Copy-Item backend\.env.example backend\.env
-Copy-Item dashboard\.env.example dashboard\.env.local
+- App nickname: Guardrail-Security-Layer
+- Firebase project ID: guardrail-security-layer
+- Firebase App ID: 1:428591962866:web:e53578084b4f2258dece6b
+- Hosting site: guardrail-security-layer
+
+4.1 Configure Firebase resources in console:
+
+1. Create Firestore database in Native mode.
+2. Enable Authentication providers:
+  - Google
+  - Email/Password
+3. Create a service account key from Project Settings -> Service accounts -> Generate new private key.
+4. Save the JSON file at backend/credentials/firebase-service-account.json.
+
+4.2 Environment policy used in this repo:
+
+- Only one runtime env file is used: `backend/.env`.
+- Frontend and dashboard use the Firebase web config constants already committed in source.
+- `backend/.env` and service-account JSON files are gitignored.
+
+Required env files and locations:
+
+- backend/.env
+
+4.3 backend/.env values:
+
+```dotenv
+APP_ENV=development
+APP_HOST=0.0.0.0
+APP_PORT=8000
+ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+
+GROQ_API_KEY=
+GROQ_MODEL=llama-3.1-8b-instant
+
+CHROMA_PATH=./.chroma
+CHROMA_COLLECTION=jailbreak_patterns
+JAILBREAK_SIMILARITY_THRESHOLD=0.79
+JAILBREAK_SEED_FILE=./app/data/jailbreak_seed.txt
+
+FIREBASE_PROJECT_ID=guardrail-security-layer
+FIREBASE_CREDENTIALS_PATH=backend/credentials/firebase-service-account.json
+FIRESTORE_INTERACTIONS_COLLECTION=interactions
+FIRESTORE_SESSIONS_COLLECTION=sessions
+FIRESTORE_USERS_COLLECTION=users
+FIRESTORE_POLICIES_COLLECTION=policies
+FIRESTORE_THREAT_PATTERNS_COLLECTION=threat_patterns
+FIRESTORE_ANALYTICS_CACHE_COLLECTION=analytics_cache
 ```
 
-Minimum backend environment variables:
+Step 4: Initialize Firebase in backend (already added in codebase)
 
-- APP_ENV
-- APP_HOST
-- APP_PORT
-- ALLOWED_ORIGINS
-- GROQ_API_KEY (optional for stub mode)
-- GROQ_MODEL
-- CHROMA_PATH
-- CHROMA_COLLECTION
-- JAILBREAK_SIMILARITY_THRESHOLD
-- JAILBREAK_SEED_FILE
-- FIREBASE_PROJECT_ID
-- FIREBASE_CREDENTIALS_PATH (optional)
-- FIRESTORE_COLLECTION
+- File: `backend/firebase_config.py`
+- Includes Admin SDK initialization + helper:
+  - `initialize_firebase()`
+  - `log_interaction(data)`
 
-Notes:
+Step 5: Test connection (temporary write)
 
-- If Firebase credentials are empty, backend safely falls back to local logging mode.
-- If GROQ_API_KEY is empty, backend returns fallback output for local development.
+Run:
 
-## Run The Project
+```powershell
+$env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\test_firebase_connection.py
+```
 
-From repository root:
+If successful, Firestore gets a `test` collection document with `{"hello": "world"}`.
+
+4.4 Frontend + dashboard Firebase web config:
+
+- Values from your Firebase web app are stored in:
+  - dashboard/src/services/firebase.js
+  - frontend/src/services/firebase.js
+- These are Firebase client config values (public identifiers), not private keys.
+- Do not place service-account JSON or other backend secrets in frontend/dashboard source.
+
+4.5 Optional Firebase CLI setup (only if you deploy hosting from this repo):
+
+```powershell
+npm install -g firebase-tools
+firebase login
+firebase use guardrail-security-layer
+firebase init hosting
+```
+
+4.6 Firestore schema is created by backend code (automatic):
+
+- No manual table/collection creation is required beyond enabling Firestore in Firebase console.
+- No static placeholder interaction rows are written.
+- On backend startup/bootstrap, the middleware seeds policy configuration docs only:
+  - policies/default_policy
+  - threat_patterns/* baseline docs
+- On each `/api/chat` request (UI, SDK, or websocket), it writes live interaction/session/analytics records automatically.
+
+Optional force-bootstrap command (not required for normal runtime):
+
+```powershell
+$env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\bootstrap_firestore_schema.py
+```
+
+4.7 Firestore collections used by backend:
+
+- interactions
+- sessions
+- users
+- policies
+- threat_patterns
+- analytics_cache
+
+Detailed schema reference: docs/firestore_schema.md
+
+### 5) Run Services (Current Codebase)
+
+Run each command from repo root in separate terminals:
 
 ```powershell
 npm run dev:backend
@@ -110,11 +227,80 @@ npm run dev:frontend
 npm run dev:dashboard
 ```
 
-Optional placeholder:
+Extension (current scaffold mode):
 
 ```powershell
 npm run dev:extension
 ```
+
+### 6) Validation Commands
+
+Backend tests:
+
+```powershell
+$env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe -m pytest -q backend/tests
+```
+
+Route map:
+
+```powershell
+$env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\print_routes.py
+```
+
+Frontend + dashboard production build check:
+
+```powershell
+npm run build --workspace @guardrail/frontend
+npm run build --workspace @guardrail/dashboard
+```
+
+## Upgrade Commands To Match Full Blueprint Exactly
+
+Use this section if your team wants to implement the remaining extension/dashboard features in this sprint.
+
+### A) Extension Upgrade (Plasmo + React + Tailwind + Firebase Auth)
+
+Option 1 (fresh extension rebuild):
+
+```powershell
+npm create plasmo@latest extension -- --template react
+```
+
+Option 2 (upgrade existing extension workspace):
+
+```powershell
+npm install --workspace @guardrail/extension react react-dom firebase
+npm install --workspace @guardrail/extension -D plasmo tailwindcss postcss autoprefixer
+```
+
+Then add scripts in extension workspace:
+
+```json
+{
+  "scripts": {
+    "dev": "plasmo dev",
+    "build": "plasmo build",
+    "package": "plasmo package"
+  }
+}
+```
+
+### B) Dashboard Upgrade (shadcn/ui + Live Firestore onSnapshot)
+
+Install core UI dependencies:
+
+```powershell
+npm install --workspace @guardrail/dashboard class-variance-authority clsx tailwind-merge lucide-react @radix-ui/react-slot
+```
+
+Initialize shadcn/ui in dashboard workspace:
+
+```powershell
+cd dashboard
+npx shadcn@latest init
+```
+
+For live incidents, wire Firestore listener using `onSnapshot()` in dashboard services and subscribe from log/stat components.
 
 ## API Surface
 
@@ -123,39 +309,15 @@ npm run dev:extension
 - GET /api/logs
 - WS /api/ws/chat
 
-## Validation Commands
+## 5-Minute Judge Demo Flow
 
-Run tests (verified command):
+1. Submit safe prompt from frontend and show normal pass-through.
+2. Submit jailbreak-style prompt and show ingress block.
+3. Submit PII-containing prompt and show egress redaction.
+4. Open dashboard and display incident analytics/log entries.
+5. Show tests + route map as implementation proof.
 
-```powershell
-$env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe -m pytest -q backend/tests
-```
+## Implementation Notes
 
-Print route table:
-
-```powershell
-$env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\print_routes.py
-```
-
-## 5-Minute Demo Script (Judging Friendly)
-
-1. Open frontend and submit a normal prompt.
-2. Submit a known jailbreak/policy-violating prompt to show block behavior.
-3. Submit PII-like data and show egress redaction.
-4. Open dashboard to show incident summary and risk analytics.
-5. Show backend route map and tests to prove implementation integrity.
-
-## What Is Already Implemented
-
-- Ingress and egress guardrail pipeline.
-- Risk-based block/allow decisions.
-- Incident logging path with local fallback.
-- Frontend chat demo.
-- Dashboard analytics/log views.
-- Workspace-scoped dependency setup and reproducible tests.
-
-## Next Extensions After Hackathon
-
-- Add role-based policy packs per domain (finance/healthcare/education).
-- Add streaming moderation hooks for token-level response control.
-- Add signed audit export and SIEM integration.
+- Firebase and Groq are both optional in local development; middleware has fallback behavior.
+- Extension and dashboard still contain scaffold sections by design, so teams can layer enterprise features without breaking the demo baseline.

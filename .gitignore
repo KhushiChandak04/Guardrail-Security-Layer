@@ -16,10 +16,15 @@ __pycache__/
 .venv/
 backend/.venv/
 
-# Environments
+# Environments and secrets
 .env
-.env.local
-.env.*.local
+**/.env
+**/.env*
+serviceAccountKey.json
+serviceAccountKey*.json
+**/serviceAccountKey*.json
+backend/credentials/*.json
+!backend/credentials/README.md
 
 # Build outputs
 dist/

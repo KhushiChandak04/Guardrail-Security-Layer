@@ -31,7 +31,12 @@ def get_firebase_service() -> FirebaseService:
     return FirebaseService(
         project_id=settings.firebase_project_id,
         credentials_path=settings.firebase_credentials_path,
-        collection_name=settings.firestore_collection,
+        interactions_collection=settings.firestore_interactions_collection,
+        sessions_collection=settings.firestore_sessions_collection,
+        users_collection=settings.firestore_users_collection,
+        policies_collection=settings.firestore_policies_collection,
+        threat_patterns_collection=settings.firestore_threat_patterns_collection,
+        analytics_cache_collection=settings.firestore_analytics_cache_collection,
     )
 
 

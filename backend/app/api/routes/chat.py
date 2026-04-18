@@ -1,4 +1,5 @@
 import json
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -11,7 +12,6 @@ from app.services.auth_service import AuthService
 from app.services.firebase_service import FirebaseService
 from app.services.llm_service import LLMService
 from app.utils.helpers import now_utc_iso
-from app.utils.security_utils import preview_text
 
 router = APIRouter()
 
@@ -23,12 +23,19 @@ async def process_chat(
     llm_service: LLMService,
     firebase_service: FirebaseService,
     auth_service: AuthService,
+    request_source: str,
 ) -> ChatResponse:
     request_id = str(uuid4())
     user = await auth_service.verify_id_token(payload.id_token)
+    user_id = user.get("uid", "anonymous")
+    user_email = user.get("email", "")
+    interaction_metadata = dict(payload.metadata)
+    interaction_metadata.setdefault("source", request_source)
+    interaction_metadata.setdefault("prompt_length", str(len(payload.prompt)))
 
     input_verdict = guardrail_engine.validate_input(payload.prompt)
     if input_verdict.blocked:
+        interaction_timestamp = now_utc_iso()
         blocked_response = ChatResponse(
             request_id=request_id,
             message=f"Request blocked: {input_verdict.reason}",
@@ -36,27 +43,34 @@ async def process_chat(
             ingress_risk=input_verdict.risk_level,
             output_risk="low",
             redactions=[],
-            timestamp=now_utc_iso(),
+            timestamp=interaction_timestamp,
         )
 
-        await firebase_service.log_incident(
-            user_id=user.get("uid", "anonymous"),
-            prompt_preview=preview_text(payload.prompt),
-            response_preview=preview_text(blocked_response.message),
-            blocked=True,
-            ingress_risk=input_verdict.risk_level,
-            output_risk="low",
-            redactions=[],
-            model=llm_service.model,
-            reason=input_verdict.reason,
+        await firebase_service.log_interaction(
+            user_id=user_id,
+            user_email=user_email,
             session_id=payload.session_id,
-            metadata=payload.metadata,
+            prompt_text=payload.prompt,
+            input_risk_level=input_verdict.risk_level,
+            input_reason=input_verdict.reason,
+            blocked=True,
+            model=llm_service.model,
+            llm_latency_ms=0,
+            output_text=None,
+            output_risk_level=None,
+            redactions=[],
+            metadata=interaction_metadata,
             request_id=request_id,
+            timestamp=interaction_timestamp,
         )
         return blocked_response
 
+    llm_started_at = perf_counter()
     llm_output = await llm_service.generate(payload.prompt)
+    llm_latency_ms = int((perf_counter() - llm_started_at) * 1000)
     safe_output, redactions, output_risk = guardrail_engine.validate_output(llm_output)
+
+    interaction_timestamp = now_utc_iso()
 
     response = ChatResponse(
         request_id=request_id,
@@ -65,24 +79,26 @@ async def process_chat(
         ingress_risk=input_verdict.risk_level,
         output_risk=output_risk,
         redactions=redactions,
-        timestamp=now_utc_iso(),
+        timestamp=interaction_timestamp,
     )
 
-    if input_verdict.risk_level != "low" or output_risk != "low" or redactions:
-        await firebase_service.log_incident(
-            user_id=user.get("uid", "anonymous"),
-            prompt_preview=preview_text(payload.prompt),
-            response_preview=preview_text(safe_output),
-            blocked=False,
-            ingress_risk=input_verdict.risk_level,
-            output_risk=output_risk,
-            redactions=redactions,
-            model=llm_service.model,
-            reason=input_verdict.reason,
-            session_id=payload.session_id,
-            metadata=payload.metadata,
-            request_id=request_id,
-        )
+    await firebase_service.log_interaction(
+        user_id=user_id,
+        user_email=user_email,
+        session_id=payload.session_id,
+        prompt_text=payload.prompt,
+        input_risk_level=input_verdict.risk_level,
+        input_reason=input_verdict.reason,
+        blocked=False,
+        model=llm_service.model,
+        llm_latency_ms=llm_latency_ms,
+        output_text=safe_output,
+        output_risk_level=output_risk,
+        redactions=redactions,
+        metadata=interaction_metadata,
+        request_id=request_id,
+        timestamp=interaction_timestamp,
+    )
 
     return response
 
@@ -101,6 +117,7 @@ async def guarded_chat(
         llm_service=llm_service,
         firebase_service=firebase_service,
         auth_service=auth_service,
+        request_source="rest_api",
     )
 
 
@@ -145,5 +162,6 @@ async def guarded_chat_ws(
             llm_service=llm_service,
             firebase_service=firebase_service,
             auth_service=auth_service,
+            request_source="websocket",
         )
         await websocket.send_text(response.model_dump_json())

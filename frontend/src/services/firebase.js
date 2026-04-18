@@ -1,6 +1,5 @@
 import { getApp, getApps, initializeApp } from "firebase/app"
-import { getAnalytics, isSupported } from "firebase/analytics"
-import { getFirestore } from "firebase/firestore"
+import { getAuth } from "firebase/auth"
 
 const FIREBASE_WEB_CONFIG = {
   apiKey: "AIzaSyBo9hKh0xt_9L9gI3SfWzIQT8a2DN6MhP0",
@@ -22,10 +21,8 @@ const firebaseConfig = {
   measurementId: FIREBASE_WEB_CONFIG.measurementId,
 }
 
-let analyticsPromise = null
-
-function hasRequiredFirebaseConfig() {
-  const requiredValues = [
+function hasRequiredConfig() {
+  const required = [
     firebaseConfig.apiKey,
     firebaseConfig.authDomain,
     firebaseConfig.projectId,
@@ -33,45 +30,20 @@ function hasRequiredFirebaseConfig() {
     firebaseConfig.messagingSenderId,
     firebaseConfig.appId,
   ]
-  return requiredValues.every(Boolean)
+  return required.every(Boolean)
 }
 
 export function getFirebaseApp() {
-  if (!hasRequiredFirebaseConfig()) {
+  if (!hasRequiredConfig()) {
     return null
   }
-
   return getApps().length ? getApp() : initializeApp(firebaseConfig)
 }
 
-export function getFirestoreDb() {
+export function getFirebaseAuth() {
   const app = getFirebaseApp()
   if (!app) {
     return null
   }
-
-  return getFirestore(app)
-}
-
-export async function getFirebaseAnalyticsInstance() {
-  if (typeof window === "undefined") {
-    return null
-  }
-
-  if (!firebaseConfig.measurementId) {
-    return null
-  }
-
-  const app = getFirebaseApp()
-  if (!app) {
-    return null
-  }
-
-  if (!analyticsPromise) {
-    analyticsPromise = isSupported()
-      .then((supported) => (supported ? getAnalytics(app) : null))
-      .catch(() => null)
-  }
-
-  return analyticsPromise
+  return getAuth(app)
 }

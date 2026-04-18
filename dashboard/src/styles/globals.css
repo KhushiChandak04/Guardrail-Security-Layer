@@ -144,6 +144,22 @@ body {
   border-collapse: collapse;
 }
 
+.table-state {
+  margin: 0 0 0.7rem;
+  font-size: 0.86rem;
+  color: var(--text-soft);
+}
+
+.table-state-error {
+  color: var(--danger);
+}
+
+.table-empty {
+  text-align: center;
+  color: var(--text-soft);
+  background: #f7faf8;
+}
+
 .table th,
 .table td {
   border: 1px solid var(--line);
@@ -184,6 +200,24 @@ body {
   padding: 0.2rem 0.56rem;
   font-family: "JetBrains Mono", monospace;
   font-size: 0.72rem;
+}
+
+.risk-chip-high {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.risk-chip-medium {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.risk-chip-low {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #166534;
 }
 
 @keyframes fade-slide {

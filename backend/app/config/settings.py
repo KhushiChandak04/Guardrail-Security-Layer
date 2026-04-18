@@ -22,10 +22,15 @@ class Settings(BaseSettings):
 
     firebase_project_id: str = ""
     firebase_credentials_path: str = ""
-    firestore_collection: str = "guardrail_incidents"
+    firestore_interactions_collection: str = "interactions"
+    firestore_sessions_collection: str = "sessions"
+    firestore_users_collection: str = "users"
+    firestore_policies_collection: str = "policies"
+    firestore_threat_patterns_collection: str = "threat_patterns"
+    firestore_analytics_cache_collection: str = "analytics_cache"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=("backend/.env",),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

@@ -82,6 +82,121 @@ body {
   color: #134e4a;
 }
 
+.auth-panel {
+  margin-bottom: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: #fffefb;
+  box-shadow: var(--shadow);
+  padding: 0.95rem;
+}
+
+.auth-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.auth-header p {
+  margin: 0.4rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.auth-status-row {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.auth-badge {
+  display: inline-block;
+  border: 1px solid #d5d0bf;
+  background: #f6f0e3;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+.auth-badge-live {
+  border-color: #9de4d6;
+  background: #e8fbf6;
+  color: #115e59;
+}
+
+.auth-user {
+  margin: 0.7rem 0 0;
+  font-size: 0.88rem;
+}
+
+.auth-form {
+  margin-top: 0.72rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.auth-form input {
+  width: 100%;
+  border: 1px solid #cec9ba;
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.68rem;
+  font: inherit;
+}
+
+.auth-form input:focus {
+  outline: 2px solid #76c7bf;
+  outline-offset: 1px;
+}
+
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.auth-button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.46rem 0.86rem;
+  background: linear-gradient(120deg, var(--accent), #0284c7);
+  color: #f8fffc;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.auth-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.auth-button-muted {
+  background: #ece9de;
+  color: #2e2d2a;
+}
+
+.auth-toggle {
+  border: none;
+  background: transparent;
+  color: #0b6f66;
+  font-size: 0.82rem;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.auth-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.auth-error {
+  margin: 0.6rem 0 0;
+  color: var(--danger);
+  font-size: 0.84rem;
+}
+
 .panel {
   border: 1px solid var(--line);
   border-radius: 1rem;

@@ -1,8 +1,8 @@
-import firebase_admin
-from firebase_admin import firestore
+from firebase_config import get_firestore_db
 
 
 def get_firestore_client():
-    if not firebase_admin._apps:
+    try:
+        return get_firestore_db()
+    except Exception:
         return None
-    return firestore.client()

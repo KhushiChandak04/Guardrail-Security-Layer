@@ -1,3 +1,4 @@
+import AuthPanel from "../components/AuthPanel"
 import ChatWindow from "../components/ChatWindow"
 
 export default function Home() {
@@ -16,6 +17,7 @@ export default function Home() {
           <span>Incident Logging</span>
         </div>
       </section>
+      <AuthPanel />
       <ChatWindow />
     </main>
   )
