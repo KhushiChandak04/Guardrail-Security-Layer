@@ -1,17 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "Guardrail Browser Extension",
+  "name": "Guardrail - Prompt Safety",
   "version": "0.1.0",
   "description": "Captures prompts and routes them through guardrail middleware.",
-  "permissions": ["storage"],
-  "host_permissions": ["<all_urls>", "http://localhost:8000/*"],
+  "permissions": ["activeTab", "scripting", "storage"],
   "background": {
-    "service_worker": "src/background/background.js"
+    "service_worker": "src/background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["src/content/contentScript.js"]
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://gemini.google.com/*",
+        "https://claude.ai/*"
+      ],
+      "js": ["src/content.js"]
     }
   ],
   "action": {

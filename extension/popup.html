@@ -4,9 +4,227 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Guardrail</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        width: 360px;
+        min-height: 480px;
+        background: #111318;
+        color: #e6e9ef;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      }
+
+      .popup {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      .header {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .brand {
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+      }
+
+      .subtitle {
+        font-size: 12px;
+        color: #aab3c0;
+      }
+
+      .label {
+        font-size: 12px;
+        color: #aab3c0;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 120px;
+        resize: vertical;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid #2b2f3a;
+        background: #171a20;
+        color: #eef0f6;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      textarea::placeholder {
+        color: #7d8796;
+      }
+
+      .btn {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .btn.primary {
+        background: #2d6cdf;
+        color: #f4f7ff;
+      }
+
+      .btn.primary:hover {
+        background: #346fe6;
+      }
+
+      .btn.secondary {
+        background: #1c2230;
+        color: #d8dfea;
+        border-color: #2b3242;
+      }
+
+      .btn.secondary:hover {
+        background: #232a3b;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .result {
+        border-radius: 12px;
+        border: 1px solid #2a2f3a;
+        background: #151821;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .status-label {
+        font-size: 12px;
+        color: #aab3c0;
+      }
+
+      .status-badge {
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        border: 1px solid transparent;
+      }
+
+      .status-idle {
+        background: #1f232b;
+        color: #a7b0bf;
+        border-color: #2c323d;
+      }
+
+      .status-safe {
+        background: #143324;
+        color: #9fe7bd;
+        border-color: #2a7a55;
+      }
+
+      .status-flagged {
+        background: #3a2f10;
+        color: #f7d67d;
+        border-color: #a9862f;
+      }
+
+      .status-blocked {
+        background: #3b1616;
+        color: #f7a3a3;
+        border-color: #a63c3c;
+      }
+
+      .result-detail {
+        font-size: 12px;
+        color: #c9d1dc;
+        line-height: 1.4;
+      }
+
+      .detail-title {
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+
+      .detail-text {
+        background: #1a1f29;
+        border-radius: 8px;
+        padding: 8px;
+        border: 1px solid #2a2f3a;
+        white-space: pre-wrap;
+      }
+    </style>
   </head>
   <body>
-    <div id="popup-root">Guardrail extension ready.</div>
-    <script type="module" src="src/popup/popup.js"></script>
+    <main class="popup">
+      <header class="header">
+        <div class="brand">Guardrail</div>
+        <div class="subtitle">Prompt Safety</div>
+      </header>
+
+      <label class="label" for="promptInput">Prompt</label>
+      <textarea
+        id="promptInput"
+        placeholder="Paste the prompt you want to validate..."
+      ></textarea>
+
+      <button class="btn primary" id="validateBtn" type="button">
+        Validate Prompt
+      </button>
+
+      <section class="result" id="resultArea" aria-live="polite">
+        <div class="status-row">
+          <span class="status-label">Status</span>
+          <span class="status-badge status-idle" id="statusBadge"
+            >Not Checked</span
+          >
+        </div>
+        <div class="result-detail" id="resultHint">
+          Run validation to see a safety result.
+        </div>
+        <div class="result-detail hidden" id="safeDetail">
+          <div class="detail-title">SAFE</div>
+          <div class="detail-text">No issues detected.</div>
+        </div>
+        <div class="result-detail hidden" id="flaggedDetail">
+          <div class="detail-title">FLAGGED - Sanitized Version</div>
+          <div class="detail-text" id="sanitizedText"></div>
+        </div>
+        <div class="result-detail hidden" id="blockedDetail">
+          <div class="detail-title">BLOCKED - Reason</div>
+          <div class="detail-text" id="blockedReason"></div>
+        </div>
+      </section>
+
+      <button class="btn secondary hidden" id="injectBtn" type="button">
+        Inject into Chat
+      </button>
+    </main>
+
+    <script src="src/popup.js"></script>
   </body>
 </html>
