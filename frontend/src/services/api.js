@@ -7,6 +7,15 @@ const NO_STORE_HEADERS = {
   Expires: "0",
 };
 
+function addUniqueCandidate(target, seen, value) {
+  const normalized = String(value || "").trim().replace(/\/+$/, "");
+  if (!normalized || seen.has(normalized)) {
+    return;
+  }
+  seen.add(normalized);
+  target.push(normalized);
+}
+
 function withCacheBust(path) {
   const separator = path.includes("?") ? "&" : "?";
   return `${path}${separator}_ts=${Date.now()}`;
@@ -16,28 +25,31 @@ function buildApiBaseCandidates() {
   const seen = new Set();
   const candidates = [];
 
-  const add = (value) => {
-    const normalized = String(value || "").trim().replace(/\/+$/, "");
-    if (!normalized || seen.has(normalized)) {
-      return;
-    }
-    seen.add(normalized);
-    candidates.push(normalized);
-  };
-
-  add(API_BASE_URL);
+  addUniqueCandidate(candidates, seen, API_BASE_URL);
 
   if (typeof window !== "undefined") {
-    add(`${window.location.origin}/api`);
+    addUniqueCandidate(candidates, seen, `${window.location.origin}/api`);
 
     if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-      add("http://127.0.0.1:8000/api");
-      add("http://localhost:8000/api");
+      addUniqueCandidate(candidates, seen, "http://127.0.0.1:8000/api");
+      addUniqueCandidate(candidates, seen, "http://localhost:8000/api");
     }
   }
 
-  add("http://127.0.0.1:8000/api");
-  add("http://localhost:8000/api");
+  addUniqueCandidate(candidates, seen, "http://127.0.0.1:8000/api");
+  addUniqueCandidate(candidates, seen, "http://localhost:8000/api");
+
+  return candidates;
+}
+
+function buildScanBaseCandidates() {
+  const seen = new Set();
+  const candidates = [];
+
+  for (const apiBase of buildApiBaseCandidates()) {
+    const scanBase = apiBase.endsWith("/api") ? apiBase.slice(0, -4) : apiBase;
+    addUniqueCandidate(candidates, seen, scanBase);
+  }
 
   return candidates;
 }
@@ -93,7 +105,8 @@ async function request(path, { method = "GET", body, headers = {} } = {}) {
 
     let payload = null;
     try {
-      payload = await response.json();
+      const raw = await response.text();
+      payload = raw ? JSON.parse(raw) : null;
     } catch {
       payload = null;
     }
@@ -177,28 +190,51 @@ export async function getGuardrailDiagnostics() {
 }
 
 export async function scanDocument(file) {
+  if (!(file instanceof File)) {
+    throw new Error("Invalid file selected for scanning.");
+  }
+
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${BASE_URL}/scan-document`, {
-    method: "POST",
-    body: formData,
-  });
+  const candidates = buildScanBaseCandidates();
 
-  if (!response.ok) {
-    let errorMessage = `HTTP error! status: ${response.status}`;
+  let lastNetworkError = null;
 
+  for (const base of candidates) {
+    let response;
     try {
-      const errorData = await response.json();
-      if (errorData?.detail) {
-        errorMessage = errorData.detail;
-      }
-    } catch {
-      // Keep the default error message when the response body is not JSON.
+      response = await fetch(`${base}/scan-document`, {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          ...NO_STORE_HEADERS,
+        },
+        body: formData,
+      });
+    } catch (networkError) {
+      lastNetworkError = networkError;
+      continue;
     }
 
-    throw new Error(errorMessage);
+    let payload = null;
+    try {
+      const raw = await response.text();
+      payload = raw ? JSON.parse(raw) : null;
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      throw new Error(buildErrorMessage(payload, response.status));
+    }
+
+    return payload;
   }
 
-  return response.json();
+  if (lastNetworkError) {
+    throw new Error("Unable to reach backend scan endpoint.");
+  }
+
+  throw new Error("Unable to scan document.");
 }
