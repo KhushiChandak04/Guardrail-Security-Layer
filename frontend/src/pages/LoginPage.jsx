@@ -4,6 +4,7 @@ import BirdAnimation from "../components/BirdAnimation";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useTheme } from "../context/ThemeContext";
 import loginBg from "../assets/auth-bg.jpg";
+import underdogLogo from "../assets/underdog-logo.png";
 
 export default function LoginPage() {
   const { loginWithGoogle, loginWithForm, isFirebaseReady } = useAuth();
@@ -39,7 +40,9 @@ export default function LoginPage() {
       setSubmitting(true);
       await loginWithForm({ ...form, mode });
     } catch (authError) {
-      setError(authError?.message || "Unable to authenticate. Please try again.");
+      setError(
+        authError?.message || "Unable to authenticate. Please try again.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -84,22 +87,11 @@ export default function LoginPage() {
       </div>
       <div className="auth-card">
         <div className="auth-brand">
-          <svg
-            width="34"
-            height="34"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            style={{ color: "var(--gold)" }}
-          >
-            <path
-              d="M12 2L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 2Z"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <img
+            src={underdogLogo}
+            alt="Underdog logo"
+            className="brand-logo brand-logo--lg"
+          />
           <div>
             <div className="auth-brand__title">Underdog</div>
             <div className="auth-brand__subtitle">AI SECURITY LAYER</div>
@@ -197,12 +189,19 @@ export default function LoginPage() {
             />
           </label>
           <button type="submit" className="btn btn-cta auth-submit">
-            {submitting ? "Please wait..." : isSignup ? "Create account" : "Sign in"}
+            {submitting
+              ? "Please wait..."
+              : isSignup
+                ? "Create account"
+                : "Sign in"}
           </button>
         </form>
 
         {error ? (
-          <p className="auth-footnote" style={{ color: "var(--danger)", marginTop: "0.75rem" }}>
+          <p
+            className="auth-footnote"
+            style={{ color: "var(--danger)", marginTop: "0.75rem" }}
+          >
             {error}
           </p>
         ) : null}

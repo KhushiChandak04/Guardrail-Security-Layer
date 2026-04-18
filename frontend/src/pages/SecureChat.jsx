@@ -5,7 +5,10 @@ import { scanDocument } from "../services/api";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { sendChatPrompt } from "../services/api";
 import { getFirebaseAuth } from "../services/firebase";
-import { appendRuntimeAuditLog, getRuntimeSessionId } from "../services/runtimeStore";
+import {
+  appendRuntimeAuditLog,
+  getRuntimeSessionId,
+} from "../services/runtimeStore";
 
 const saveAuditLog = (entry) => {
   appendRuntimeAuditLog(entry);
@@ -32,7 +35,11 @@ function riskLevelToScore(level) {
 function buildRiskSnapshot(result, sessionId) {
   const blocked = Boolean(result?.blocked);
   const redactions = Array.isArray(result?.redactions) ? result.redactions : [];
-  const decision = blocked ? "BLOCKED" : redactions.length > 0 ? "REDACTED" : "PASSED";
+  const decision = blocked
+    ? "BLOCKED"
+    : redactions.length > 0
+      ? "REDACTED"
+      : "PASSED";
   const riskLevel = blocked ? result?.ingress_risk : result?.output_risk;
 
   return {
@@ -45,13 +52,21 @@ function buildRiskSnapshot(result, sessionId) {
         ? redactions.map((field) => `Redacted ${field}`)
         : ["No policy violations detected"],
     detected_issues: blocked
-      ? [{ type: "Policy", detail: String(result?.ingress_risk || "high"), confidence: 1 }]
+      ? [
+          {
+            type: "Policy",
+            detail: String(result?.ingress_risk || "high"),
+            confidence: 1,
+          },
+        ]
       : redactions.map((field) => ({
           type: "PII",
           detail: String(field),
           confidence: 1,
         })),
-    sanitized_prompt: blocked ? "Blocked before model call" : "Forwarded to model",
+    sanitized_prompt: blocked
+      ? "Blocked before model call"
+      : "Forwarded to model",
     llm_response: String(result?.message || ""),
     output_clean: !blocked && redactions.length === 0,
     pii_in_output: redactions,
@@ -63,11 +78,15 @@ function buildRiskSnapshot(result, sessionId) {
   };
 }
 
-function persistAuditLog({ user, prompt, result, sessionId }) {
+function persistAuditLog({ user, prompt, result, sessionId, agent }) {
   const blocked = Boolean(result?.blocked);
   const redactions = Array.isArray(result?.redactions) ? result.redactions : [];
 
-  const decisionLabel = blocked ? "Blocked" : redactions.length > 0 ? "Redacted" : "Passed";
+  const decisionLabel = blocked
+    ? "Blocked"
+    : redactions.length > 0
+      ? "Redacted"
+      : "Passed";
   const displayName = String(user?.displayName || user?.email || "U");
 
   saveAuditLog({
@@ -91,6 +110,7 @@ function persistAuditLog({ user, prompt, result, sessionId }) {
     redacted: redactions.length > 0,
     session_id: sessionId,
     model: String(result?.llm?.model || "unknown"),
+    agent: String(agent || "default"),
   });
 }
 
@@ -105,6 +125,17 @@ export default function SecureChat() {
   const [scanLoading, setScanLoading] = useState(false);
   const [scanNotice, setScanNotice] = useState("");
   const [hasPendingDocumentScan, setHasPendingDocumentScan] = useState(false);
+  const agentOptions = [
+    { value: "underdog-guard", label: "Underdog Guard" },
+    { value: "gpt-4o", label: "GPT-4o" },
+    { value: "claude-3.5", label: "Claude 3.5" },
+    { value: "gemini", label: "Gemini" },
+    { value: "gemini-1.5", label: "Gemini 1.5" },
+    { value: "grok", label: "Grok" },
+    { value: "llama-3", label: "Llama 3" },
+    { value: "mistral", label: "Mistral" },
+  ];
+  const [selectedAgent, setSelectedAgent] = useState(agentOptions[0].value);
   const sessionId = useMemo(() => getOrCreateSessionId(), []);
   const fileInputRef = useRef(null);
 
@@ -137,7 +168,9 @@ export default function SecureChat() {
     } catch (error) {
       setScanResult(null);
       setHasPendingDocumentScan(false);
-      setScanNotice(error instanceof Error ? error.message : "Unable to scan document.");
+      setScanNotice(
+        error instanceof Error ? error.message : "Unable to scan document.",
+      );
     } finally {
       setScanLoading(false);
     }
@@ -162,7 +195,9 @@ export default function SecureChat() {
 
     try {
       const auth = getFirebaseAuth();
-      const idToken = auth?.currentUser ? await auth.currentUser.getIdToken() : "";
+      const idToken = auth?.currentUser
+        ? await auth.currentUser.getIdToken()
+        : "";
 
       const result = await sendChatPrompt({
         prompt,
@@ -173,11 +208,14 @@ export default function SecureChat() {
           client_timestamp: new Date().toISOString(),
           prompt_length: String(prompt.length),
           user_email: String(user?.email || ""),
+          agent: selectedAgent,
         },
       });
 
       const blocked = Boolean(result?.blocked);
-      const redactions = Array.isArray(result?.redactions) ? result.redactions : [];
+      const redactions = Array.isArray(result?.redactions)
+        ? result.redactions
+        : [];
 
       if (blocked || redactions.length > 0) {
         setMessages((prev) => [
@@ -187,8 +225,16 @@ export default function SecureChat() {
             role: "guard",
             decision: blocked ? "BLOCKED" : "REDACTED",
             detectedIssues: blocked
-              ? [{ type: "Policy", detail: String(result?.ingress_risk || "high") }]
-              : redactions.map((field) => ({ type: "PII", detail: String(field) })),
+              ? [
+                  {
+                    type: "Policy",
+                    detail: String(result?.ingress_risk || "high"),
+                  },
+                ]
+              : redactions.map((field) => ({
+                  type: "PII",
+                  detail: String(field),
+                })),
           },
         ]);
       }
@@ -198,15 +244,24 @@ export default function SecureChat() {
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: String(result?.message || "Request blocked by guardrail policy."),
+          content: String(
+            result?.message || "Request blocked by guardrail policy.",
+          ),
           outputClean: !blocked && redactions.length === 0,
         },
       ]);
 
       setCurrentRisk(buildRiskSnapshot(result, sessionId));
-      persistAuditLog({ user, prompt, result, sessionId });
+      persistAuditLog({
+        user,
+        prompt,
+        result,
+        sessionId,
+        agent: selectedAgent,
+      });
     } catch (requestError) {
-      const message = requestError?.message || "Unable to reach backend right now.";
+      const message =
+        requestError?.message || "Unable to reach backend right now.";
       setError(message);
       setMessages((prev) => [
         ...prev,
@@ -231,7 +286,9 @@ export default function SecureChat() {
     }
 
     const outgoingContent =
-      hasPendingDocumentScan && scanResult?.action === "MASK" && scanResult?.sanitized_text
+      hasPendingDocumentScan &&
+      scanResult?.action === "MASK" &&
+      scanResult?.sanitized_text
         ? scanResult.sanitized_text
         : inputText;
 
@@ -256,7 +313,9 @@ export default function SecureChat() {
           marginLeft: "210px",
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+        <div
+          style={{ display: "flex", flexDirection: "column", height: "100vh" }}
+        >
           <header
             style={{
               padding: "1rem 1.25rem",
@@ -318,7 +377,8 @@ export default function SecureChat() {
                   marginTop: "2rem",
                 }}
               >
-                Start a conversation. Every prompt and response is logged in backend storage.
+                Start a conversation. Every prompt and response is logged in
+                backend storage.
               </div>
             ) : null}
             {messages.map((msg) => {
@@ -342,9 +402,13 @@ export default function SecureChat() {
                 />
               );
             })}
-            {isLoading ? <div style={{ alignSelf: "flex-start" }}>...</div> : null}
+            {isLoading ? (
+              <div style={{ alignSelf: "flex-start" }}>...</div>
+            ) : null}
             {error ? (
-              <div style={{ color: "var(--danger)", fontSize: "0.78rem" }}>{error}</div>
+              <div style={{ color: "var(--danger)", fontSize: "0.78rem" }}>
+                {error}
+              </div>
             ) : null}
           </div>
           <div
@@ -378,6 +442,28 @@ export default function SecureChat() {
             >
               Attach
             </button>
+            <select
+              value={selectedAgent}
+              onChange={(event) => setSelectedAgent(event.target.value)}
+              aria-label="Select AI agent"
+              style={{
+                height: "44px",
+                minWidth: "180px",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                background: "var(--surface)",
+                color: "var(--brown-dark)",
+                fontFamily: "Inter",
+                fontSize: "0.875rem",
+                padding: "0 12px",
+              }}
+            >
+              {agentOptions.map((agent) => (
+                <option key={agent.value} value={agent.value}>
+                  {agent.label}
+                </option>
+              ))}
+            </select>
             <textarea
               value={inputText}
               onChange={(event) => setInputText(event.target.value)}
@@ -414,7 +500,10 @@ export default function SecureChat() {
                 style={{
                   width: "100%",
                   fontSize: "0.75rem",
-                  color: scanResult?.action === "BLOCK" ? "var(--danger)" : "var(--brown-light)",
+                  color:
+                    scanResult?.action === "BLOCK"
+                      ? "var(--danger)"
+                      : "var(--brown-light)",
                   marginTop: "-0.25rem",
                 }}
               >
@@ -469,7 +558,9 @@ const GuardBubble = ({ decision, detectedIssues }) => (
       Guardrail decision: {decision}
     </div>
     <div style={{ marginTop: "4px" }}>
-      Detected: {detectedIssues.map((issue) => issue.detail || issue.type).join(", ") || "none"}
+      Detected:{" "}
+      {detectedIssues.map((issue) => issue.detail || issue.type).join(", ") ||
+        "none"}
     </div>
   </div>
 );
@@ -495,7 +586,9 @@ const AssistantBubble = ({ content, outputClean }) => (
         marginTop: "4px",
       }}
     >
-      {outputClean ? "Output scanned · Clean" : "Output scanned · Review required"}
+      {outputClean
+        ? "Output scanned · Clean"
+        : "Output scanned · Review required"}
     </div>
   </div>
 );
@@ -540,8 +633,20 @@ const Inspector = ({ risk }) => {
     >
       <h3 className="label-style">Guardrail Inspector</h3>
       <div style={{ textAlign: "center" }}>
-        <svg width="120" height="120" viewBox="0 0 36 36" style={{ margin: "0 auto" }}>
-          <circle cx="18" cy="18" r="16" fill="none" stroke="var(--border)" strokeWidth="3" />
+        <svg
+          width="120"
+          height="120"
+          viewBox="0 0 36 36"
+          style={{ margin: "0 auto" }}
+        >
+          <circle
+            cx="18"
+            cy="18"
+            r="16"
+            fill="none"
+            stroke="var(--border)"
+            strokeWidth="3"
+          />
           <circle
             cx="18"
             cy="18"
@@ -552,12 +657,21 @@ const Inspector = ({ risk }) => {
             strokeDasharray={`${(risk.risk_score / 100) * 100.5} 100.5`}
             transform="rotate(-90 18 18)"
           />
-          <text x="18" y="20.5" textAnchor="middle" fontSize="8" fill={riskColor} fontWeight="700">
+          <text
+            x="18"
+            y="20.5"
+            textAnchor="middle"
+            fontSize="8"
+            fill={riskColor}
+            fontWeight="700"
+          >
             {risk.risk_score}
           </text>
         </svg>
         <div style={{ marginTop: "0.5rem" }}>
-          <span className={`badge badge-${risk.decision.toLowerCase()}`}>{risk.decision}</span>
+          <span className={`badge badge-${risk.decision.toLowerCase()}`}>
+            {risk.decision}
+          </span>
         </div>
       </div>
 
@@ -573,17 +687,27 @@ const Inspector = ({ risk }) => {
 
       <div>
         <h4 className="label-style">Detected Issues</h4>
-        <div className="card" style={{ padding: "0.75rem", fontFamily: "monospace" }}>
+        <div
+          className="card"
+          style={{ padding: "0.75rem", fontFamily: "monospace" }}
+        >
           {risk.detected_issues.length > 0
-            ? risk.detected_issues.map((issue) => `${issue.type}: ${issue.detail}`).join("\n")
+            ? risk.detected_issues
+                .map((issue) => `${issue.type}: ${issue.detail}`)
+                .join("\n")
             : "No explicit issue labels returned"}
         </div>
       </div>
 
       <div>
         <h4 className="label-style">Redactions</h4>
-        <div className="card" style={{ padding: "0.75rem", fontFamily: "monospace" }}>
-          {risk.pii_in_output.length > 0 ? risk.pii_in_output.join(", ") : "None"}
+        <div
+          className="card"
+          style={{ padding: "0.75rem", fontFamily: "monospace" }}
+        >
+          {risk.pii_in_output.length > 0
+            ? risk.pii_in_output.join(", ")
+            : "None"}
         </div>
       </div>
 

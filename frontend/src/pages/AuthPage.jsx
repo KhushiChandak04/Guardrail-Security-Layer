@@ -11,6 +11,7 @@ import {
 import { useNavigate } from "react-router-dom";
 
 import { getFirebaseAuth, syncAuthUserToFirestore } from "../services/firebase";
+import underdogLogo from "../assets/underdog-logo.png";
 import "./AuthPage.css";
 
 export default function AuthPage() {
@@ -62,13 +63,23 @@ export default function AuthPage() {
       let signedInUser;
 
       if (mode === "signup") {
-        const credentials = await createUserWithEmailAndPassword(auth, email, password);
+        const credentials = await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password,
+        );
         signedInUser = credentials.user;
         if (form.name.trim()) {
-          await updateProfile(credentials.user, { displayName: form.name.trim() });
+          await updateProfile(credentials.user, {
+            displayName: form.name.trim(),
+          });
         }
       } else {
-        const credentials = await signInWithEmailAndPassword(auth, email, password);
+        const credentials = await signInWithEmailAndPassword(
+          auth,
+          email,
+          password,
+        );
         signedInUser = credentials.user;
       }
 
@@ -130,10 +141,14 @@ export default function AuthPage() {
         </button>
 
         <div className="auth-brand">
-          <span className="auth-shield">⬡</span>
+          <img
+            src={underdogLogo}
+            alt="Underdog logo"
+            className="brand-logo brand-logo--lg"
+          />
           <div>
-            <div className="auth-brand-name">BharatGuard</div>
-            <div className="auth-brand-tag">AI Security Middleware</div>
+            <div className="auth-brand-name brand-text">Underdog</div>
+            <div className="auth-brand-tag">AI Security Layer</div>
           </div>
         </div>
 
@@ -187,7 +202,7 @@ export default function AuthPage() {
           </h2>
           <p className="auth-subheading">
             {mode === "login"
-              ? "Access your BharatGuard secure chat"
+              ? "Access your Underdog secure chat"
               : "Start securing your AI app today"}
           </p>
 
@@ -197,7 +212,10 @@ export default function AuthPage() {
                 Signed in as {user.email || user.uid}
               </p>
               <div className="auth-actions">
-                <button className="auth-submit" onClick={() => navigate("/chat")}>
+                <button
+                  className="auth-submit"
+                  onClick={() => navigate("/chat")}
+                >
                   Continue to Secure Chat →
                 </button>
                 <button

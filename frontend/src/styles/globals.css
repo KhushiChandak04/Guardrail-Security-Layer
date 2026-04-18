@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&family=Underdog+Display:wght@400;500;600;700&display=swap");
 
 :root {
   --bg-0: #fff6e8;
@@ -36,6 +36,7 @@
     radial-gradient(circle at 12% 8%, #fff4c7 0, transparent 36%),
     radial-gradient(circle at 88% 16%, #f5e2c3 0, transparent 34%),
     linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 100%);
+  --font-brand: "Underdog Display", "Playfair Display", serif;
 }
 
 * {
@@ -258,9 +259,59 @@ button {
   margin-bottom: 1.2rem;
 }
 
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand-logo {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 8px 18px rgba(92, 62, 30, 0.16);
+  filter: drop-shadow(0 2px 8px rgba(92, 62, 30, 0.2));
+}
+
+.brand-logo--sm {
+  width: 62px;
+  height: 62px;
+}
+
+.brand-logo--lg {
+  width: 84px;
+  height: 84px;
+}
+
+.brand-text {
+  font-family: var(--font-brand);
+  letter-spacing: 0.02em;
+  font-weight: 700;
+}
+
+body.theme-dark .brand-logo {
+  background: rgba(244, 233, 216, 0.18);
+  box-shadow:
+    0 0 16px rgba(241, 199, 108, 0.4),
+    0 8px 18px rgba(0, 0, 0, 0.35);
+  filter: brightness(1.35) saturate(1.1)
+    drop-shadow(0 0 10px rgba(241, 199, 108, 0.6));
+}
+
 .auth-brand__title {
-  font-family: "Playfair Display", serif;
-  font-size: 1.5rem;
+  font-family: var(--font-brand);
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--brown-dark);
+}
+
+.auth-brand-name {
+  font-family: var(--font-brand);
+  font-size: 1.7rem;
+  font-weight: 700;
   color: var(--brown-dark);
 }
 

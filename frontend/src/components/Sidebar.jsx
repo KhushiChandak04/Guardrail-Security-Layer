@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 
 import { useTheme } from "../context/ThemeContext";
 import { getStats } from "../services/api";
+import underdogLogo from "../assets/underdog-logo.png";
 
 const SIDEBAR_POLL_INTERVAL_MS = 15000;
 
@@ -23,7 +24,10 @@ export default function Sidebar() {
 
         const attackRate = Number(stats?.attack_rate || 0);
         const cleanRate = Number(stats?.clean_rate || 0);
-        const blendedRisk = Math.min(100, Math.max(0, Math.round((attackRate * 0.6) + ((100 - cleanRate) * 0.4))));
+        const blendedRisk = Math.min(
+          100,
+          Math.max(0, Math.round(attackRate * 0.6 + (100 - cleanRate) * 0.4)),
+        );
         setRisk(blendedRisk);
       } catch {
         if (isMounted) {
@@ -71,26 +75,19 @@ export default function Sidebar() {
         padding: "1.5rem 1rem",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M12 2L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 2Z"
-            stroke="var(--gold)"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+      <div
+        className="brand-mark"
+        style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+      >
+        <img
+          src={underdogLogo}
+          alt="Underdog logo"
+          className="brand-logo brand-logo--sm"
+        />
         <span
+          className="brand-text"
           style={{
-            fontFamily: "'Playfair Display', serif",
-            fontSize: "1.1rem",
+            fontSize: "1.3rem",
             color: "var(--brown-dark)",
           }}
         >

@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
+import underdogLogo from "../assets/underdog-logo.png";
 
 export default function Navbar() {
   const { theme, toggleTheme } = useTheme();
@@ -24,6 +25,7 @@ export default function Navbar() {
       <div style={{ display: "flex", alignItems: "center" }}>
         <Link
           to="/"
+          className="brand-mark"
           style={{
             textDecoration: "none",
             color: "var(--brown-dark)",
@@ -32,15 +34,12 @@ export default function Navbar() {
             gap: "0.5rem",
           }}
         >
-          <span role="img" aria-label="shield">
-            🛡️
-          </span>
-          <span
-            style={{
-              fontFamily: "'Playfair Display', serif",
-              fontSize: "1.3rem",
-            }}
-          >
+          <img
+            src={underdogLogo}
+            alt="Underdog logo"
+            className="brand-logo brand-logo--sm"
+          />
+          <span className="brand-text" style={{ fontSize: "1.6rem" }}>
             Underdog
           </span>
         </Link>
