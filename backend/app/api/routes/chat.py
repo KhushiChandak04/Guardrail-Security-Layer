@@ -30,10 +30,17 @@ async def process_chat(
     user_id = user.get("uid", "anonymous")
     user_email = user.get("email", "")
     interaction_metadata = dict(payload.metadata)
+    # interaction_metadata.setdefault("source", request_source)
+    # interaction_metadata.setdefault("prompt_length", str(len(payload.prompt)))
+
+    # input_verdict = guardrail_engine.validate_input(payload.prompt)
+    # input_was_sanitized = bool(input_verdict.sanitized_prompt and input_verdict.sanitized_prompt != payload.prompt)
     interaction_metadata.setdefault("source", request_source)
     interaction_metadata.setdefault("prompt_length", str(len(payload.prompt)))
 
-    input_verdict = guardrail_engine.validate_input(payload.prompt)
+    # Add the await keyword here since validate_input now runs concurrent async ML tasks
+    input_verdict = await guardrail_engine.validate_input(payload.prompt) 
+    
     input_was_sanitized = bool(input_verdict.sanitized_prompt and input_verdict.sanitized_prompt != payload.prompt)
     interaction_metadata.setdefault("ingress_risk", input_verdict.risk_level)
     interaction_metadata.setdefault("ingress_reason", input_verdict.reason)
