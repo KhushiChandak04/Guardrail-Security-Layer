@@ -35,13 +35,31 @@ async def process_chat(
 
     # input_verdict = guardrail_engine.validate_input(payload.prompt)
     # input_was_sanitized = bool(input_verdict.sanitized_prompt and input_verdict.sanitized_prompt != payload.prompt)
+    # interaction_metadata.setdefault("source", request_source)
+    # interaction_metadata.setdefault("prompt_length", str(len(payload.prompt)))
+    # document_was_provided = bool(payload.document_text and payload.document_text.strip())
+    # interaction_metadata.setdefault("document_provided", str(document_was_provided).lower())
+
+    # # Add the await keyword here since validate_input now runs concurrent async ML tasks
+    # input_verdict = await guardrail_engine.validate_input(payload.prompt) 
     interaction_metadata.setdefault("source", request_source)
     interaction_metadata.setdefault("prompt_length", str(len(payload.prompt)))
     document_was_provided = bool(payload.document_text and payload.document_text.strip())
     interaction_metadata.setdefault("document_provided", str(document_was_provided).lower())
 
+    # --- NEW PRE-PROCESSOR CODE BEGINS ---
+    # 1. Send raw prompt to Groq for translation and sanitization
+    optimized_data = await llm_service.optimize_and_translate(payload.prompt)
+    
+    # 2. Overwrite the payload prompt with the clean English version
+    payload.prompt = optimized_data.get("rephrased_english_prompt", payload.prompt)
+    
+    # 3. Save the detected language to metadata for your logs
+    interaction_metadata.setdefault("original_language", optimized_data.get("original_language", "Unknown"))
+    # --- NEW PRE-PROCESSOR CODE ENDS ---
+
     # Add the await keyword here since validate_input now runs concurrent async ML tasks
-    input_verdict = await guardrail_engine.validate_input(payload.prompt) 
+    input_verdict = await guardrail_engine.validate_input(payload.prompt)
     
     input_was_sanitized = bool(input_verdict.sanitized_prompt and input_verdict.sanitized_prompt != payload.prompt)
     interaction_metadata.setdefault("ingress_risk", input_verdict.risk_level)

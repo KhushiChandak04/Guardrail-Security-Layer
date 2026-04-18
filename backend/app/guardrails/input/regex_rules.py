@@ -39,8 +39,65 @@ SECRET_PATTERNS = [
     (re.compile(r"(?i)aws[_-]?access[_-]?key[_-]?id\\s*[:=]\\s*[A-Z0-9]{16,}"), "cloud_key_exposure", 95),
 ]
 
-EMAIL_REGEX = re.compile(r"\\b[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}\\b")
+# EMAIL_REGEX = re.compile(r"\\b[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}\\b")
+# PHONE_REGEX = re.compile(r"(?:\+?\(?\d[\d\s().-]{7,}\d)")
+
+# ... (Keep your SECRET_PATTERNS exactly the same) ...
+
+EMAIL_REGEX = re.compile(r"\b[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b")
 PHONE_REGEX = re.compile(r"(?:\+?\(?\d[\d\s().-]{7,}\d)")
+
+# Add these two new Indian PII Patterns
+PAN_REGEX = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b")
+AADHAAR_REGEX = re.compile(r"\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b")
+
+# ... (Keep SYSTEM_EXTRACTION_PATTERNS and others the same) ...
+
+def detect_secrets_and_pii(normalized_data: dict) -> dict:
+    raw_text = str(normalized_data.get("raw", ""))
+    reasons: list[str] = []
+    risk = 0
+
+    for pattern, label, weight in SECRET_PATTERNS:
+        if pattern.search(raw_text):
+            reasons.append(label)
+            risk = max(risk, weight)
+
+    pii_detected = False
+    
+    if EMAIL_REGEX.search(raw_text):
+        reasons.append("email_detected")
+        pii_detected = True
+
+    if PAN_REGEX.search(raw_text):
+        reasons.append("pan_card_detected")
+        pii_detected = True
+
+    if AADHAAR_REGEX.search(raw_text):
+        reasons.append("aadhaar_detected")
+        pii_detected = True
+
+    for candidate in PHONE_REGEX.findall(raw_text):
+        digits = re.sub(r"\D", "", candidate)
+        if 10 <= len(digits) <= 15:
+            # Prevent Aadhaar from being double-counted as a phone number
+            if not AADHAAR_REGEX.search(candidate):
+                reasons.append("phone_number_detected")
+                pii_detected = True
+            break
+
+    if pii_detected:
+        risk = max(risk, 45)
+
+    block = any(reason.endswith("_exposure") for reason in reasons)
+    sanitize = pii_detected and not block
+
+    return {
+        "risk": risk,
+        "reasons": reasons,
+        "block": block,
+        "sanitize": sanitize,
+    }
 
 SYSTEM_EXTRACTION_PATTERNS = [
     (re.compile(r"\bsystem prompt\b"), "system prompt extraction"),

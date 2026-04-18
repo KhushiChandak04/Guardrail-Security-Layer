@@ -26,6 +26,8 @@ PII_ENTITIES: list[str] = [
     "US_SSN",
     "CREDIT_CARD",
     "IBAN_CODE",
+    "INDIA_PAN",
+    "INDIA_AADHAAR"
 ]
 
 DEFAULT_SYSTEM_PROMPT = (
