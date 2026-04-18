@@ -204,9 +204,16 @@
         
 #         return redacted_text, redactions, output_risk
 from dataclasses import dataclass
+
+from app.config.settings import settings
 from app.services.vector_service import VectorService
 from app.utils.security_utils import normalize_text
-from app.guardrails.input.regex_rules import detect_system_extraction, detect_heuristic_injection
+from app.guardrails.input.regex_rules import (
+    detect_heuristic_injection,
+    detect_output_disclosure,
+    detect_secrets_and_pii,
+    detect_system_extraction,
+)
 from app.guardrails.input.prompt_injection import PromptInjectionDetector
 from app.guardrails.output.redaction import mask_sensitive
 
@@ -221,52 +228,69 @@ class GuardrailEngine:
     def __init__(self, vector_service: VectorService):
         self.vector_service = vector_service
         self.ml_detector = PromptInjectionDetector(vector_service=vector_service)
-        self.risk_block_threshold = 70
-        self.risk_sanitize_threshold = 40
+        self.risk_block_threshold = settings.ingress_block_threshold
+        self.risk_sanitize_threshold = settings.ingress_sanitize_threshold
 
     def validate_input(self, prompt: str) -> InputVerdict:
         normalized_data = normalize_text(prompt)
-        reasons = []
-        risk_score = 0
+        reasons: list[str] = []
+        risk_score = 0.0
+        force_sanitize = False
 
         # 1. System Extraction (Immediate Block)
         sys_ext = detect_system_extraction(normalized_data)
         if sys_ext["triggered"]:
             return InputVerdict(True, "System prompt extraction attempt", "high", "")
 
-        # 2. Heuristics & ML
+        # 2. Secret/PII detection from intelligence rules.
+        sensitive_content = detect_secrets_and_pii(normalized_data)
+        if sensitive_content["block"]:
+            reason = " | ".join(sensitive_content["reasons"]) if sensitive_content["reasons"] else "Sensitive secret exposure detected"
+            return InputVerdict(True, reason, "high", "")
+
+        if sensitive_content["sanitize"]:
+            force_sanitize = True
+
+        reasons.extend(sensitive_content["reasons"])
+        risk_score = max(risk_score, float(sensitive_content["risk"]))
+
+        # 3. Heuristics & ML
         heuristics = detect_heuristic_injection(normalized_data)
-        ml_score, ml_reason = self.ml_detector.score(prompt) # Contains Vector & DeBERTa logic
-        
-        risk_score = max(heuristics["risk"], ml_score * 100)
+        ml_score, ml_reason = self.ml_detector.score(prompt)
+
+        risk_score = max(risk_score, float(heuristics["risk"]), ml_score * 100)
         reasons.extend(heuristics["reasons"])
         if ml_reason and ml_reason != "Safe":
             reasons.append(ml_reason)
 
-        # 3. Decision
+        # 4. Decision
         action = "allow"
         if risk_score >= self.risk_block_threshold:
             action = "block"
-        elif risk_score >= self.risk_sanitize_threshold:
+        elif force_sanitize or risk_score >= self.risk_sanitize_threshold:
             action = "sanitize"
 
         sanitized_prompt = prompt
         if action == "sanitize":
-            sanitized_prompt, _ = mask_sensitive(prompt, use_presidio=True)
+            sanitized_prompt, detected_entities = mask_sensitive(prompt, use_presidio=True)
+            if detected_entities:
+                reasons.append("sanitized sensitive content before inference")
+
+        unique_reasons = list(dict.fromkeys(reason for reason in reasons if reason))
 
         return InputVerdict(
             blocked=(action == "block"),
-            reason=" | ".join(list(set(reasons))) if reasons else "Safe",
+            reason=" | ".join(unique_reasons) if unique_reasons else "Safe",
             risk_level="high" if action == "block" else ("medium" if action == "sanitize" else "low"),
-            sanitized_prompt=sanitized_prompt
+            sanitized_prompt=sanitized_prompt,
         )
 
     def validate_output(self, text: str) -> tuple[str, list[str], str]:
-        lowered = text.lower()
-        if "system prompt" in lowered or "internal instructions" in lowered:
-            return ("Error: Output deemed unsafe.", ["system_disclosure"], "high")
+        disclosure = detect_output_disclosure(text)
+        if disclosure["triggered"]:
+            return ("Error: Output deemed unsafe.", disclosure["reasons"], "high")
 
         redacted_text, redactions = mask_sensitive(text, use_presidio=True)
         output_risk = "medium" if redactions else "low"
-        
+
         return (redacted_text, redactions, output_risk)

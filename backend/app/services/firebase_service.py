@@ -1,9 +1,12 @@
 import asyncio
+import hashlib
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 from firebase_admin import firestore
 
+from app.guardrails.input.regex_rules import export_threat_patterns
 from firebase_config import get_firestore_db
 
 logger = logging.getLogger(__name__)
@@ -15,6 +18,10 @@ class FirebaseService:
         *,
         project_id: str,
         credentials_path: str,
+        jailbreak_seed_file: str,
+        ingress_block_threshold: int,
+        ingress_sanitize_threshold: int,
+        jailbreak_similarity_threshold: float,
         interactions_collection: str,
         sessions_collection: str,
         users_collection: str,
@@ -29,6 +36,10 @@ class FirebaseService:
         self.policies_collection = policies_collection
         self.threat_patterns_collection = threat_patterns_collection
         self.analytics_cache_collection = analytics_cache_collection
+        self.jailbreak_seed_file = jailbreak_seed_file
+        self.ingress_block_threshold = max(0, min(100, ingress_block_threshold))
+        self.ingress_sanitize_threshold = max(0, min(100, ingress_sanitize_threshold))
+        self.jailbreak_similarity_threshold = max(0.0, min(1.0, jailbreak_similarity_threshold))
         self.local_interactions: list[dict] = []
         self._schema_bootstrapped = False
         self.db = None
@@ -95,6 +106,68 @@ class FirebaseService:
 
         return datetime.now(timezone.utc)
 
+    def _read_seed_threat_patterns(self) -> list[str]:
+        if not self.jailbreak_seed_file:
+            return []
+
+        seed_path = Path(self.jailbreak_seed_file)
+        if not seed_path.exists():
+            logger.warning("Jailbreak seed file not found during Firebase sync: %s", seed_path)
+            return []
+
+        patterns: list[str] = []
+        for line in seed_path.read_text(encoding="utf-8").splitlines():
+            clean_line = line.strip()
+            if clean_line and not clean_line.startswith("[") and not clean_line.startswith("#"):
+                patterns.append(clean_line)
+
+        return patterns
+
+    def _build_threat_pattern_documents(self, timestamp: str) -> list[dict[str, str]]:
+        documents: list[dict[str, str]] = []
+        seen_patterns: set[str] = set()
+
+        for pattern_doc in export_threat_patterns():
+            pattern_value = pattern_doc.get("pattern", "").strip()
+            if not pattern_value:
+                continue
+
+            normalized = pattern_value.lower()
+            if normalized in seen_patterns:
+                continue
+
+            seen_patterns.add(normalized)
+            documents.append(
+                {
+                    "id": pattern_doc["id"],
+                    "type": pattern_doc["type"],
+                    "pattern": pattern_value,
+                    "severity": pattern_doc["severity"],
+                    "source": pattern_doc.get("source", "logic_regex"),
+                    "created_at": timestamp,
+                }
+            )
+
+        for seed_pattern in self._read_seed_threat_patterns():
+            normalized = seed_pattern.lower()
+            if normalized in seen_patterns:
+                continue
+
+            seen_patterns.add(normalized)
+            pattern_hash = hashlib.sha1(seed_pattern.encode("utf-8")).hexdigest()[:12]
+            documents.append(
+                {
+                    "id": f"seed-{pattern_hash}",
+                    "type": "jailbreak_seed",
+                    "pattern": seed_pattern,
+                    "severity": "high",
+                    "source": "logic_seed_file",
+                    "created_at": timestamp,
+                }
+            )
+
+        return documents
+
     async def bootstrap_schema(self) -> bool:
         if not self.enabled:
             return False
@@ -105,6 +178,9 @@ class FirebaseService:
         def _seed() -> None:
             if db is None:
                 raise RuntimeError("Firestore client is not initialized.")
+
+            threat_patterns = self._build_threat_pattern_documents(timestamp)
+            block_categories = sorted({pattern["type"] for pattern in threat_patterns})
 
             # Remove legacy placeholder documents so collections contain only live data.
             for collection_name in [
@@ -120,42 +196,15 @@ class FirebaseService:
             db.collection(self.policies_collection).document("default_policy").set(
                 {
                     "policy_name": "default_policy",
-                    "max_risk_score": 70,
-                    "block_categories": [
-                        "violence",
-                        "hate",
-                        "data_extraction",
-                        "prompt_injection",
-                    ],
+                    "max_risk_score": self.ingress_block_threshold,
+                    "sanitize_risk_score": self.ingress_sanitize_threshold,
+                    "jailbreak_similarity_threshold": self.jailbreak_similarity_threshold,
+                    "block_categories": block_categories,
                     "redact_pii": True,
                     "updated_at": timestamp,
                 },
                 merge=True,
             )
-
-            threat_patterns = [
-                {
-                    "id": "prompt-injection-ignore-previous-instructions",
-                    "type": "prompt_injection",
-                    "pattern": "ignore previous instructions",
-                    "severity": "high",
-                    "created_at": timestamp,
-                },
-                {
-                    "id": "jailbreak-reveal-system-prompt",
-                    "type": "jailbreak_attempt",
-                    "pattern": "reveal system prompt",
-                    "severity": "high",
-                    "created_at": timestamp,
-                },
-                {
-                    "id": "safety-bypass",
-                    "type": "policy_violation",
-                    "pattern": "bypass safety",
-                    "severity": "medium",
-                    "created_at": timestamp,
-                },
-            ]
 
             for pattern in threat_patterns:
                 doc_id = pattern["id"]
@@ -179,6 +228,79 @@ class FirebaseService:
             return True
 
         return await self.bootstrap_schema()
+
+    def _runtime_guardrail_snapshot(self) -> dict[str, object]:
+        threat_patterns = self._build_threat_pattern_documents(datetime.now(timezone.utc).isoformat())
+        block_categories = sorted({pattern["type"] for pattern in threat_patterns})
+
+        return {
+            "source": "runtime",
+            "policy_document_found": False,
+            "policy": {
+                "max_risk_score": self.ingress_block_threshold,
+                "sanitize_risk_score": self.ingress_sanitize_threshold,
+                "jailbreak_similarity_threshold": self.jailbreak_similarity_threshold,
+                "block_categories": block_categories,
+                "redact_pii": True,
+            },
+            "threat_pattern_count": len(threat_patterns),
+        }
+
+    async def fetch_guardrail_snapshot(self) -> dict[str, object]:
+        if not self.enabled:
+            return self._runtime_guardrail_snapshot()
+
+        db = self.db
+
+        def _read_snapshot() -> tuple[bool, dict, int]:
+            if db is None:
+                raise RuntimeError("Firestore client is not initialized.")
+
+            policy_ref = db.collection(self.policies_collection).document("default_policy")
+            policy_snapshot = policy_ref.get()
+            policy_data = policy_snapshot.to_dict() if policy_snapshot.exists else {}
+
+            threat_count = 0
+            for _ in db.collection(self.threat_patterns_collection).stream():
+                threat_count += 1
+
+            return bool(policy_snapshot.exists), policy_data, threat_count
+
+        try:
+            policy_exists, policy_data, threat_count = await asyncio.to_thread(_read_snapshot)
+        except Exception as error:
+            logger.warning("Failed to fetch guardrail snapshot from Firestore. Falling back to runtime snapshot. Details: %s", error)
+            self.enabled = False
+            return self._runtime_guardrail_snapshot()
+
+        runtime_snapshot = self._runtime_guardrail_snapshot()
+        runtime_policy = runtime_snapshot["policy"] if isinstance(runtime_snapshot.get("policy"), dict) else {}
+
+        categories = policy_data.get("block_categories", runtime_policy.get("block_categories", []))
+        if isinstance(categories, list):
+            normalized_categories = sorted({str(category) for category in categories if str(category)})
+        else:
+            normalized_categories = list(runtime_policy.get("block_categories", []))
+
+        policy = {
+            "max_risk_score": int(policy_data.get("max_risk_score", runtime_policy.get("max_risk_score", self.ingress_block_threshold))),
+            "sanitize_risk_score": int(policy_data.get("sanitize_risk_score", runtime_policy.get("sanitize_risk_score", self.ingress_sanitize_threshold))),
+            "jailbreak_similarity_threshold": float(
+                policy_data.get(
+                    "jailbreak_similarity_threshold",
+                    runtime_policy.get("jailbreak_similarity_threshold", self.jailbreak_similarity_threshold),
+                )
+            ),
+            "block_categories": normalized_categories,
+            "redact_pii": bool(policy_data.get("redact_pii", runtime_policy.get("redact_pii", True))),
+        }
+
+        return {
+            "source": "firestore",
+            "policy_document_found": policy_exists,
+            "policy": policy,
+            "threat_pattern_count": int(threat_count),
+        }
 
     async def sync_user_profile(
         self,
@@ -232,6 +354,7 @@ class FirebaseService:
         user_email: str,
         session_id: str | None,
         prompt_text: str,
+        input_sanitized: bool,
         input_risk_level: str,
         input_reason: str,
         blocked: bool,
@@ -291,7 +414,7 @@ class FirebaseService:
             "timestamp_iso": interaction_timestamp.isoformat(),
             "input": {
                 "text": prompt_text,
-                "sanitized": False,
+                "sanitized": input_sanitized,
             },
             "input_analysis": {
                 "risk_score": input_risk_score_value,
@@ -408,6 +531,7 @@ class FirebaseService:
             user_email="",
             session_id=session_id,
             prompt_text=prompt_preview,
+            input_sanitized=False,
             input_risk_level=ingress_risk,
             input_reason=reason,
             blocked=blocked,

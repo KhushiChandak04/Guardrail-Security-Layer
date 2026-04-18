@@ -100,6 +100,10 @@ import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from dataclasses import dataclass
 from pathlib import Path
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class VectorMatch:
@@ -120,28 +124,38 @@ class VectorService:
             embedding_function=self.embedding_fn,
             metadata={"hnsw:space": "cosine"},
         )
-        self._seed(seed_file)
+        self.seed_patterns = self._read_seed_patterns(seed_file)
+        self._seed()
 
-    def _seed(self, seed_file: str) -> None:
-        if self.collection.count() > 0:
-            return
-            
+    def _read_seed_patterns(self, seed_file: str) -> list[str]:
         seed_path = Path(seed_file)
         if not seed_path.exists():
-            return
-            
-        # Parse the seed file, ignoring tags
-        patterns = []
+            logger.warning("Jailbreak seed file not found: %s", seed_path)
+            return []
+
+        patterns: list[str] = []
         for line in seed_path.read_text(encoding="utf-8").splitlines():
             clean_line = line.strip()
-            if clean_line and not clean_line.startswith("["):
+            if clean_line and not clean_line.startswith("[") and not clean_line.startswith("#"):
                 patterns.append(clean_line)
-                
-        if patterns:
+
+        return patterns
+
+    def _seed(self) -> None:
+        if self.collection.count() > 0:
+            return
+
+        if not self.seed_patterns:
+            return
+
+        if self.seed_patterns:
             self.collection.add(
-                documents=patterns,
-                ids=[f"seed-{i}" for i in range(len(patterns))]
+                documents=self.seed_patterns,
+                ids=[f"seed-{i}" for i in range(len(self.seed_patterns))]
             )
+
+    def list_seed_patterns(self) -> list[str]:
+        return list(self.seed_patterns)
 
     def query_similar(self, text: str) -> VectorMatch | None:
         if self.collection.count() == 0:

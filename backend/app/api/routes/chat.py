@@ -12,8 +12,6 @@ from app.services.auth_service import AuthService
 from app.services.firebase_service import FirebaseService
 from app.services.llm_service import LLMService
 from app.utils.helpers import now_utc_iso
-# from backend.app.services import llm_service
-from app.services.llm_service import LLMService
 
 router = APIRouter()
 
@@ -36,6 +34,11 @@ async def process_chat(
     interaction_metadata.setdefault("prompt_length", str(len(payload.prompt)))
 
     input_verdict = guardrail_engine.validate_input(payload.prompt)
+    input_was_sanitized = bool(input_verdict.sanitized_prompt and input_verdict.sanitized_prompt != payload.prompt)
+    interaction_metadata.setdefault("ingress_risk", input_verdict.risk_level)
+    interaction_metadata.setdefault("ingress_reason", input_verdict.reason)
+    interaction_metadata.setdefault("input_was_sanitized", str(input_was_sanitized).lower())
+
     if input_verdict.blocked:
         interaction_timestamp = now_utc_iso()
         blocked_response = ChatResponse(
@@ -53,6 +56,7 @@ async def process_chat(
             user_email=user_email,
             session_id=payload.session_id,
             prompt_text=payload.prompt,
+            input_sanitized=input_was_sanitized,
             input_risk_level=input_verdict.risk_level,
             input_reason=input_verdict.reason,
             blocked=True,
@@ -68,8 +72,6 @@ async def process_chat(
         return blocked_response
 
     llm_started_at = perf_counter()
-    # llm_output = await llm_service.generate(payload.prompt)
-    # In app/api/routes/chat.py (inside process_chat)
     llm_output = await llm_service.generate(input_verdict.sanitized_prompt)
     llm_latency_ms = int((perf_counter() - llm_started_at) * 1000)
     safe_output, redactions, output_risk = guardrail_engine.validate_output(llm_output)
@@ -91,6 +93,7 @@ async def process_chat(
         user_email=user_email,
         session_id=payload.session_id,
         prompt_text=payload.prompt,
+        input_sanitized=input_was_sanitized,
         input_risk_level=input_verdict.risk_level,
         input_reason=input_verdict.reason,
         blocked=False,
