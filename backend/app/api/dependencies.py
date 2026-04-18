@@ -11,9 +11,9 @@ from app.services.vector_service import VectorService
 @lru_cache
 def get_vector_service() -> VectorService:
     return VectorService(
-        persist_path=settings.chroma_path,
+        persist_path=settings.resolved_chroma_path,
         collection_name=settings.chroma_collection,
-        seed_file=settings.jailbreak_seed_file,
+        seed_file=settings.resolved_jailbreak_seed_file,
     )
 
 
@@ -31,6 +31,10 @@ def get_firebase_service() -> FirebaseService:
     return FirebaseService(
         project_id=settings.firebase_project_id,
         credentials_path=settings.firebase_credentials_path,
+        jailbreak_seed_file=settings.resolved_jailbreak_seed_file,
+        ingress_block_threshold=settings.ingress_block_threshold,
+        ingress_sanitize_threshold=settings.ingress_sanitize_threshold,
+        jailbreak_similarity_threshold=settings.jailbreak_similarity_threshold,
         interactions_collection=settings.firestore_interactions_collection,
         sessions_collection=settings.firestore_sessions_collection,
         users_collection=settings.firestore_users_collection,

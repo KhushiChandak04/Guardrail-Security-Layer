@@ -1,28 +1,65 @@
-import React from "react"
-import { BrowserRouter as Router, Navigate, Route, Routes } from "react-router-dom"
+import React from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-import { ChatProvider } from "./context/ChatContext"
-import { ThemeProvider } from "./context/ThemeContext"
-import AuthPage from "./pages/AuthPage"
-import Home from "./pages/Home"
-import LandingPage from "./pages/LandingPage"
-import SolutionPage from "./pages/SolutionPage"
-import "./styles/globals.css"
+import { AuthProvider } from "./hooks/useAuth.jsx";
+import ThemeProvider from "./context/ThemeContext";
+import LandingPage from "./pages/LandingPage";
+import LoginPage from "./pages/LoginPage";
+import OurSolutions from "./pages/OurSolutions";
+import DashboardHome from "./pages/dashboard/Home";
+import SecureChat from "./pages/SecureChat";
+import AuditLogs from "./pages/AuditLogs";
+import Policies from "./pages/Policies";
+import ProtectedRoute from "./components/ProtectedRoute";
 
-export default function App() {
+import "./styles/globals.css";
+
+function App() {
   return (
     <ThemeProvider>
-      <ChatProvider>
-        <Router>
+      <BrowserRouter>
+        <AuthProvider>
           <Routes>
             <Route path="/" element={<LandingPage />} />
-            <Route path="/solution" element={<SolutionPage />} />
-            <Route path="/auth" element={<AuthPage />} />
-            <Route path="/chat" element={<Home />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/solutions" element={<OurSolutions />} />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <DashboardHome />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/secure-chat"
+              element={
+                <ProtectedRoute>
+                  <SecureChat />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/audit-logs"
+              element={
+                <ProtectedRoute>
+                  <AuditLogs />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/policies"
+              element={
+                <ProtectedRoute>
+                  <Policies />
+                </ProtectedRoute>
+              }
+            />
           </Routes>
-        </Router>
-      </ChatProvider>
+        </AuthProvider>
+      </BrowserRouter>
     </ThemeProvider>
-  )
+  );
 }
+
+export default App;

@@ -6,7 +6,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+WORKSPACE_DIR = BACKEND_DIR.parent
 ENV_FILE = BACKEND_DIR / ".env"
+
+
+def resolve_runtime_path(path_value: str) -> str:
+    candidate = Path(path_value)
+    if candidate.is_absolute():
+        return str(candidate.resolve())
+
+    normalized = str(candidate).replace("\\", "/")
+    if normalized.startswith("backend/"):
+        return str((WORKSPACE_DIR / normalized).resolve())
+
+    return str((BACKEND_DIR / candidate).resolve())
 
 
 class Settings(BaseSettings):
@@ -24,6 +37,8 @@ class Settings(BaseSettings):
     chroma_collection: str = "jailbreak_patterns"
     jailbreak_similarity_threshold: float = 0.79
     jailbreak_seed_file: str = "./app/data/jailbreak_seed.txt"
+    ingress_block_threshold: int = 70
+    ingress_sanitize_threshold: int = 40
 
     firebase_project_id: str = ""
     firebase_credentials_path: str = ""
@@ -52,10 +67,23 @@ class Settings(BaseSettings):
     def validate_temperature(cls, value: float) -> float:
         return max(0.0, min(1.0, value))
 
+    @field_validator("ingress_block_threshold", "ingress_sanitize_threshold")
+    @classmethod
+    def validate_thresholds(cls, value: int) -> int:
+        return max(0, min(100, value))
+
     @property
     def cors_origins(self) -> list[str]:
         origins = [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
         return origins or ["*"]
+
+    @property
+    def resolved_chroma_path(self) -> str:
+        return resolve_runtime_path(self.chroma_path)
+
+    @property
+    def resolved_jailbreak_seed_file(self) -> str:
+        return resolve_runtime_path(self.jailbreak_seed_file)
 
 
 @lru_cache

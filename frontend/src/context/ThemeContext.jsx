@@ -1,28 +1,36 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 
-const ThemeContext = createContext();
+export const ThemeContext = createContext(null);
 
-export function ThemeProvider({ children }) {
-  // Default to dark; persist preference in localStorage
-  const [theme, setTheme] = useState(() => {
-    return localStorage.getItem("bg-theme") || "dark";
-  });
+export default function ThemeProvider({ children }) {
+  const [theme, setTheme] = useState("light");
 
   useEffect(() => {
-    // Apply theme as a data attribute on <html> — all CSS vars respond to this
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("bg-theme", theme);
+    const savedTheme = localStorage.getItem("underdog-theme") || "light";
+    setTheme(savedTheme);
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.remove("theme-light", "theme-dark");
+    document.body.classList.add(`theme-${theme}`);
+    localStorage.setItem("underdog-theme", theme);
   }, [theme]);
 
-  const toggle = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+  const toggleTheme = () => {
+    setTheme((prevTheme) => (prevTheme === "light" ? "dark" : "light"));
+  };
 
   return (
-    <ThemeContext.Provider value={{ theme, toggle }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );
 }
 
 export function useTheme() {
-  return useContext(ThemeContext);
+  const context = useContext(ThemeContext);
+  if (!context) {
+    throw new Error("useTheme must be used within a ThemeProvider");
+  }
+  return context;
 }

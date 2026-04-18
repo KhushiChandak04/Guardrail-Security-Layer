@@ -1,33 +1,43 @@
-import axios from "axios"
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api").replace(/\/+$/, "")
+async function fetchWithAuth(url, options = {}) {
+  const token = localStorage.getItem("underdog-token");
+  const headers = {
+    "Content-Type": "application/json",
+    ...options.headers,
+  };
 
-const api = axios.create({
-  baseURL: apiBaseUrl,
-  timeout: 15000
-})
-
-export async function sendChatPrompt({ prompt, idToken, sessionId, metadata = {} }) {
-  const payload = {
-    prompt,
-    session_id: sessionId,
-    metadata,
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
-  if (idToken) {
-    payload.id_token = idToken
+  const response = await fetch(`${BASE_URL}${url}`, { ...options, headers });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
   }
 
-  const response = await api.post("/chat", payload)
-  return response.data
+  return response.json();
 }
 
-export async function syncAuthUserProfile({ idToken, displayName = "" }) {
-  const payload = {
-    id_token: idToken,
-    display_name: displayName,
-  }
+export async function secureChat({ prompt, sessionId }) {
+  return fetchWithAuth("/api/secure-chat", {
+    method: "POST",
+    body: JSON.stringify({ prompt, session_id: sessionId }),
+  });
+}
 
-  const response = await api.post("/auth/sync-user", payload)
-  return response.data
+export async function getLogs({ decision, level, search, limit, offset } = {}) {
+  const params = new URLSearchParams({
+    ...(decision && { decision }),
+    ...(level && { level }),
+    ...(search && { search }),
+    ...(limit && { limit }),
+    ...(offset && { offset }),
+  });
+  return fetchWithAuth(`/api/logs?${params.toString()}`);
+}
+
+export async function getStats() {
+  return fetchWithAuth("/api/stats");
 }

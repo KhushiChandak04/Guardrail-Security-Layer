@@ -2,8 +2,6 @@ import { getApp, getApps, initializeApp } from "firebase/app"
 import { getAuth } from "firebase/auth"
 import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore"
 
-import { syncAuthUserProfile } from "./api"
-
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -54,8 +52,6 @@ export async function syncAuthUserToFirestore(user, role = "user") {
     return false
   }
 
-  let clientSynced = false
-
   // Try client-side Firestore write first when rules allow it.
   try {
     const db = getFirestoreDb()
@@ -78,33 +74,11 @@ export async function syncAuthUserToFirestore(user, role = "user") {
       }
 
       await setDoc(userRef, payload, { merge: true })
-      clientSynced = true
-    }
-  } catch {
-    clientSynced = false
-  }
-
-  // Always attempt backend sync as the source of truth (Admin SDK bypasses client rules).
-  try {
-    if (typeof user.getIdToken === "function") {
-      const idToken = await user.getIdToken()
-      if (idToken) {
-        await syncAuthUserProfile({
-          idToken,
-          displayName: user.displayName || "",
-        })
-        return true
-      }
-    }
-  } catch {
-    if (clientSynced) {
       return true
     }
+  } catch {
+    return false
   }
 
-  if (clientSynced) {
-    return true
-  }
-
-  throw new Error("Unable to sync user profile to Firestore. Check backend Firebase config and auth token.")
+  return false
 }

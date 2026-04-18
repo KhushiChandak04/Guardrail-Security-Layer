@@ -1,138 +1,139 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import "./LandingPage.css";
+import React from "react";
+import { Link } from "react-router-dom";
+import Navbar from "../components/Navbar";
+import BirdAnimation from "../components/BirdAnimation";
+import { useAuth } from "../hooks/useAuth.jsx";
 
 export default function LandingPage() {
-  const navigate = useNavigate();
-  const spotlightRef = useRef(null);
-  const [mousePos, setMousePos] = useState({ x: 50, y: 50 });
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const handleMouseMove = (e) => {
-      const x = (e.clientX / window.innerWidth) * 100;
-      const y = (e.clientY / window.innerHeight) * 100;
-      setMousePos({ x, y });
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
+  const { isAuthenticated } = useAuth();
 
   return (
-    <div className="landing-root">
-      {/* Noise grain overlay */}
-      <div className="grain" />
-
-      {/* Spotlight that follows cursor */}
-      <div
-        className="spotlight"
+    <div className="page">
+      <Navbar />
+      <BirdAnimation />
+      <main
         style={{
-          background: `radial-gradient(ellipse 520px 380px at ${mousePos.x}% ${mousePos.y}%,
-            rgba(124, 58, 237, 0.18) 0%,
-            rgba(191, 0, 255, 0.10) 35%,
-            transparent 70%)`,
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          textAlign: "center",
+          position: "relative",
+          zIndex: 1,
+          padding: "0 1rem",
         }}
-      />
-
-      {/* Fixed spotlight on tagline always */}
-      <div className="spotlight-fixed" />
-
-      {/* Grid pattern */}
-      <div className="grid-overlay" />
-
-      {/* Top bar */}
-      <nav className={`topbar ${mounted ? "topbar--in" : ""}`}>
-        <div className="topbar-logo">
-          <span className="logo-shield">⬡</span>
-          <span className="logo-text">BharatGuard</span>
+      >
+        <div
+          style={{
+            display: "inline-block",
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+            padding: "4px 14px",
+            borderRadius: "20px",
+            fontSize: "0.75rem",
+            color: "var(--brown-light)",
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            marginBottom: "1.5rem",
+          }}
+        >
+          AI SECURITY MIDDLEWARE
         </div>
-        <div className="topbar-badge">AI Security Layer · v1.0</div>
-      </nav>
-
-      {/* Main hero content */}
-      <main className="hero">
-        <div className={`hero-inner ${mounted ? "hero--in" : ""}`}>
-          {/* Eyebrow label */}
-          <div className="eyebrow">
-            <span className="eyebrow-dot" />
-            GenAI Middleware Security · Hackathon Edition
-          </div>
-
-          {/* Main tagline with spotlight text effect */}
-          <h1 className="tagline">
-            <span className="tagline-line">Secure Every</span>
-            <span className="tagline-line tagline-line--accent">
-              <span className="spotlight-text">Prompt.</span>
-            </span>
-            <span className="tagline-line">Redact. Enable.</span>
-          </h1>
-
-          {/* Subtitle */}
-          <p className="subtitle">
-            A plug-in guardrail layer for any LLM — built for India,
-            <br />
-            with native Aadhaar, PAN, UPI & GST protection.
-          </p>
-
-          {/* CTA Buttons */}
-          <div className="cta-group">
-            <button
-              className="btn btn--primary"
-              onClick={() => navigate("/solution")}
-            >
-              <span className="btn-icon">◈</span>
-              Our Solution
-            </button>
-            <button
-              className="btn btn--secondary"
-              onClick={() => navigate("/auth")}
-            >
+        <h1
+          style={{
+            fontFamily: "'Playfair Display', serif",
+            fontSize: "2.8rem",
+            color: "var(--brown-dark)",
+            lineHeight: 1.2,
+            marginBottom: "1rem",
+          }}
+        >
+          Secure AI Adoption
+          <br />
+          at Scale
+        </h1>
+        <p
+          style={{
+            fontSize: "0.95rem",
+            color: "var(--brown-light)",
+            maxWidth: "420px",
+            lineHeight: 1.7,
+            marginBottom: "2rem",
+          }}
+        >
+          Protection for every GenAI application you build and deploy — with
+          Indian PII intelligence built in.
+        </p>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          {isAuthenticated ? (
+            <Link to="/dashboard" className="btn btn-cta">
+              Back to Dashboard
+            </Link>
+          ) : (
+            <Link to="/login" className="btn btn-cta">
               Get Started
-              <span className="btn-arrow">→</span>
-            </button>
-          </div>
-
-          {/* Floating stat pills */}
-          <div className="stat-strip">
-            <div className="stat-pill">
-              <span className="stat-num">6</span>
-              <span className="stat-label">Indian PII Types</span>
-            </div>
-            <div className="stat-divider" />
-            <div className="stat-pill">
-              <span className="stat-num">30+</span>
-              <span className="stat-label">Jailbreak Patterns</span>
-            </div>
-            <div className="stat-divider" />
-            <div className="stat-pill">
-              <span className="stat-num">0</span>
-              <span className="stat-label">Code Changes Needed</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right side — abstract shield visual */}
-        <div className={`hero-visual ${mounted ? "visual--in" : ""}`}>
-          <div className="shield-ring ring-1" />
-          <div className="shield-ring ring-2" />
-          <div className="shield-ring ring-3" />
-          <div className="shield-core">
-            <span className="shield-icon">⬡</span>
-            <span className="shield-label">PROTECTED</span>
-          </div>
-          <div className="orbit-dot dot-1" />
-          <div className="orbit-dot dot-2" />
-          <div className="orbit-dot dot-3" />
+            </Link>
+          )}
+          <Link to="/solutions" className="btn btn-outline">
+            Our Solutions
+          </Link>
         </div>
       </main>
-
-      {/* Bottom bar */}
-      <footer className="bottom-bar">
-        <span></span>
-        <span className="bottom-divider">·</span>
-        <span></span>
+      <footer
+        style={{
+          position: "absolute",
+          bottom: 0,
+          width: "100%",
+          display: "flex",
+          justifyContent: "center",
+          paddingBottom: "1.5rem",
+          zIndex: 1,
+        }}
+      >
+        <div style={{ display: "flex", gap: "1.5rem" }}>
+          <div className="feature-pill">
+            <span
+              className="dot"
+              style={{ "--dot-color": "var(--danger)" }}
+            ></span>
+            Input Guard
+          </div>
+          <div className="feature-pill">
+            <span
+              className="dot"
+              style={{ "--dot-color": "var(--success)" }}
+            ></span>
+            Output Guard
+          </div>
+          <div className="feature-pill">
+            <span
+              className="dot"
+              style={{ "--dot-color": "var(--gold)" }}
+            ></span>
+            Audit Logs
+          </div>
+        </div>
       </footer>
+      <style>{`
+        .feature-pill {
+          border: 1px solid var(--border);
+          background: var(--surface);
+          padding: 6px 16px;
+          border-radius: 20px;
+          font-size: 0.75rem;
+          color: var(--brown-light);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .feature-pill .dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background-color: var(--dot-color);
+        }
+      `}</style>
     </div>
   );
 }

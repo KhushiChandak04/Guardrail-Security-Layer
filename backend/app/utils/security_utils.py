@@ -34,4 +34,9 @@ def normalize_text(text: str) -> dict:
     if not clauses:
         clauses = [cleaned]
 
-    return {"normalized": cleaned, "compact": compact, "clauses": clauses}
+    return {
+        "raw": text,
+        "normalized": cleaned,
+        "compact": compact,
+        "clauses": clauses,
+    }

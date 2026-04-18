@@ -145,6 +145,8 @@ CHROMA_PATH=./.chroma
 CHROMA_COLLECTION=jailbreak_patterns
 JAILBREAK_SIMILARITY_THRESHOLD=0.79
 JAILBREAK_SEED_FILE=./app/data/jailbreak_seed.txt
+INGRESS_BLOCK_THRESHOLD=70
+INGRESS_SANITIZE_THRESHOLD=40
 
 FIREBASE_PROJECT_ID=guardrail-security-layer
 FIREBASE_CREDENTIALS_PATH=backend/credentials/firebase-service-account.json
@@ -219,6 +221,10 @@ $env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\bootstrap_
 - analytics_cache
 
 Detailed schema reference: docs/firestore_schema.md
+
+Intelligence integration note:
+- Threat pattern documents are synchronized from backend logic files (`regex_rules.py`) and jailbreak seed data (`jailbreak_seed.txt`) during backend schema bootstrap.
+- Guardrail block/sanitize thresholds are read from `backend/.env` and written into `policies/default_policy`.
 
 ### 5) Run Services (Current Codebase)
 
@@ -316,7 +322,6 @@ Get-NetTCPConnection -LocalPort 8000 -State Listen
 Expected behavior:
 - `GET /` returns service JSON with routes
 - `GET /health` returns `{"status":"ok"}`
-- `POST /api/auth/sync-user` with invalid token returns `401` (this confirms route is live + auth check is active)
 
 ## Upgrade Commands To Match Full Blueprint Exactly
 
@@ -354,7 +359,7 @@ Then add scripts in extension workspace:
 - GET /
 - GET /health
 - POST /api/chat
-- POST /api/auth/sync-user
+- GET /api/diagnostics/guardrails
 - GET /api/logs
 - WS /api/ws/chat
 
