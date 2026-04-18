@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import BirdAnimation from "../components/BirdAnimation";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useTheme } from "../context/ThemeContext";
-import loginBg from "../assets/login-bg.svg";
+import loginBg from "../assets/auth-bg.jpg";
 
 export default function LoginPage() {
   const { loginWithGoogle, loginWithForm } = useAuth();

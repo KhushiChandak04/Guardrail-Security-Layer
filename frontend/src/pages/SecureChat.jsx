@@ -1,7 +1,27 @@
 import React, { useState } from "react";
 import Sidebar from "../components/Sidebar";
+import { useAuth } from "../hooks/useAuth.jsx";
+
+const AUDIT_STORAGE_KEY = "underdog-audit-logs";
+
+const loadAuditLogs = () => {
+  try {
+    const raw = localStorage.getItem(AUDIT_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (error) {
+    console.error("Failed to read audit logs", error);
+    return [];
+  }
+};
+
+const saveAuditLog = (entry) => {
+  const logs = loadAuditLogs();
+  const next = [entry, ...logs].slice(0, 200);
+  localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(next));
+};
 
 export default function SecureChat() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -39,6 +59,23 @@ export default function SecureChat() {
       };
 
       setCurrentRisk(mockResponse);
+
+      const decisionLabel =
+        mockResponse.decision === "REDACT"
+          ? "Redacted"
+          : mockResponse.decision === "BLOCK"
+            ? "Blocked"
+            : "Passed";
+
+      saveAuditLog({
+        id: Date.now(),
+        timestamp: new Date().toISOString(),
+        user: user?.name?.[0] || "U",
+        email: user?.email || "unknown@underdog.ai",
+        prompt: userMessage.content,
+        risk_score: mockResponse.risk_score,
+        decision: decisionLabel,
+      });
 
       const guardMessage = {
         id: Date.now() + 1,

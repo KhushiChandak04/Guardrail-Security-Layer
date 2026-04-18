@@ -1,5 +1,15 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import Sidebar from "../components/Sidebar";
+import { useAuth } from "../hooks/useAuth.jsx";
+
+const AUDIT_STORAGE_KEY = "underdog-audit-logs";
+
+const formatTimestamp = (timestamp, fallback) => {
+  if (!timestamp) return fallback || "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return fallback || "";
+  return date.toLocaleString();
+};
 
 // TODO: fetch from GET /api/logs
 const mockLogs = [
@@ -78,33 +88,59 @@ const mockLogs = [
 ];
 
 export default function AuditLogs() {
+  const { user } = useAuth();
   const [filterDecision, setFilterDecision] = useState("All");
   const [filterLevel, setFilterLevel] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
 
+  const userEmail = user?.email?.toLowerCase();
+  const storedLogs = useMemo(() => {
+    try {
+      const raw = localStorage.getItem(AUDIT_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (error) {
+      console.error("Failed to parse audit logs", error);
+      return [];
+    }
+  }, []);
+
+  const sourceLogs = storedLogs.length ? storedLogs : mockLogs;
+
+  const userLogs = userEmail
+    ? sourceLogs.filter((log) => log.email?.toLowerCase() === userEmail)
+    : [];
+
   const handleViewLog = (log) => {
     setSelectedLog(log);
     setDrawerOpen(true);
   };
 
-  const filteredLogs = mockLogs.filter((log) => {
-    const decisionMatch =
-      filterDecision === "All" || log.decision === filterDecision;
-    const levelMatch =
-      filterLevel === "All" ||
-      (filterLevel === "Critical" && log.risk_score > 85) ||
-      (filterLevel === "High" && log.risk_score > 60 && log.risk_score <= 85) ||
-      (filterLevel === "Medium" &&
-        log.risk_score > 30 &&
-        log.risk_score <= 60) ||
-      (filterLevel === "Low" && log.risk_score <= 30);
-    const searchMatch = log.prompt
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-    return decisionMatch && levelMatch && searchMatch;
-  });
+  const filteredLogs = userLogs
+    .sort((a, b) => {
+      const aTime = new Date(a.timestamp || a.time || 0).getTime();
+      const bTime = new Date(b.timestamp || b.time || 0).getTime();
+      return bTime - aTime;
+    })
+    .filter((log) => {
+      const decisionMatch =
+        filterDecision === "All" || log.decision === filterDecision;
+      const levelMatch =
+        filterLevel === "All" ||
+        (filterLevel === "Critical" && log.risk_score > 85) ||
+        (filterLevel === "High" &&
+          log.risk_score > 60 &&
+          log.risk_score <= 85) ||
+        (filterLevel === "Medium" &&
+          log.risk_score > 30 &&
+          log.risk_score <= 60) ||
+        (filterLevel === "Low" && log.risk_score <= 30);
+      const searchMatch = log.prompt
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      return decisionMatch && levelMatch && searchMatch;
+    });
 
   return (
     <div className="page" style={{ flexDirection: "row" }}>
@@ -207,8 +243,7 @@ export default function AuditLogs() {
                 }}
               >
                 <tr>
-                  <th className="table-header">Time</th>
-                  <th className="table-header">User</th>
+                  <th className="table-header">Timestamp</th>
                   <th className="table-header">Prompt</th>
                   <th className="table-header">Risk</th>
                   <th className="table-header">Decision</th>
@@ -216,9 +251,24 @@ export default function AuditLogs() {
                 </tr>
               </thead>
               <tbody>
-                {filteredLogs.map((log) => (
-                  <LogEntry key={log.id} log={log} onView={handleViewLog} />
-                ))}
+                {filteredLogs.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      style={{
+                        padding: "1rem 1.25rem",
+                        color: "var(--brown-light)",
+                        fontSize: "0.85rem",
+                      }}
+                    >
+                      No activity yet for this account.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLogs.map((log) => (
+                    <LogEntry key={log.id} log={log} onView={handleViewLog} />
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -269,44 +319,10 @@ const LogEntry = ({ log, onView }) => {
           padding: "10px 14px",
           fontSize: "0.78rem",
           color: "var(--brown-light)",
+          whiteSpace: "nowrap",
         }}
       >
-        {log.time}
-      </td>
-      <td
-        style={{
-          padding: "10px 14px",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-        }}
-      >
-        <div
-          style={{
-            width: "28px",
-            height: "28px",
-            borderRadius: "50%",
-            background: "var(--gold)",
-            color: "white",
-            display: "grid",
-            placeItems: "center",
-            fontSize: "0.8rem",
-            fontWeight: "bold",
-          }}
-        >
-          {log.user}
-        </div>
-        <span
-          style={{
-            fontSize: "0.82rem",
-            color: "var(--brown-mid)",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {log.email}
-        </span>
+        {formatTimestamp(log.timestamp, log.time)}
       </td>
       <td
         style={{
@@ -433,7 +449,7 @@ const LogDrawer = ({ log, open, onClose }) => {
           }}
         >
           <span className="meta-label">Timestamp</span>
-          <span>{new Date().toISOString()}</span>
+          <span>{log.timestamp || new Date().toISOString()}</span>
           <span className="meta-label">Session ID</span>
           <span>sess_{log.id}</span>
           <span className="meta-label">User ID</span>

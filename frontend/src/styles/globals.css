@@ -30,6 +30,8 @@
   --success-text: #2b5f38;
   --warning-text: #8a5b0f;
   --danger-text: #8f2a22;
+  --tagline-bg: #2d1f16;
+  --tagline-text: #fff4e4;
   --page-bg:
     radial-gradient(circle at 12% 8%, #fff4c7 0, transparent 36%),
     radial-gradient(circle at 88% 16%, #f5e2c3 0, transparent 34%),
@@ -84,6 +86,8 @@ body.theme-dark {
       transparent 36%
     ),
     linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 100%);
+  --tagline-bg: #f4e6d0;
+  --tagline-text: #2a1f17;
 }
 
 a {
