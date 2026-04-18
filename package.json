@@ -5,14 +5,12 @@
   "description": "Bidirectional security guardrail platform for GenAI chatbot applications.",
   "workspaces": [
     "frontend",
-    "dashboard",
     "extension",
     "sdk/js"
   ],
   "scripts": {
     "dev:backend": ".venv/Scripts/python.exe -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000",
     "dev:frontend": "npm run dev --workspace @guardrail/frontend",
-    "dev:dashboard": "npm run dev --workspace @guardrail/dashboard",
     "dev:extension": "npm run dev --workspace @guardrail/extension",
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",

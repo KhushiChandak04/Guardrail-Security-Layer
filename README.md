@@ -19,7 +19,7 @@ This project places a middleware checkpoint between users and foundation models 
 4. LLM response returns to middleware.
 5. Egress checks run (PII detection/redaction, risk scoring).
 6. Safe response is returned to client.
-7. Incident logs are written for auditing and dashboard monitoring.
+7. Incident logs are written for auditing and monitoring.
 
 ## Monorepo Layout
 
@@ -27,7 +27,6 @@ This project places a middleware checkpoint between users and foundation models 
 Guardrail-Security-Layer/
   backend/      # FastAPI guardrail middleware + tests
   frontend/     # React (Vite) chat UI
-  dashboard/    # Next.js admin dashboard
   extension/    # Browser extension scaffold (currently MV3 baseline)
   sdk/          # Python + JavaScript SDK starters
   shared/       # Shared schemas/constants
@@ -45,13 +44,12 @@ Guardrail-Security-Layer/
 - Firebase Auth in extension: not yet implemented.
 - WebSocket helper: scaffolded.
 
-### Part B: Admin Dashboard (Command Center)
+### Part B: Frontend App (Single UI)
 
-- Next.js + React: implemented.
-- Recharts visualizations: implemented.
-- Firebase client initialization: implemented.
-- Firestore onSnapshot live listeners: not yet implemented (current incident table is static sample data).
-- shadcn/ui component system: not yet implemented.
+- React + Vite chat UI: implemented.
+- Firebase Auth integration: implemented.
+- Session-aware API submission and metadata logging: implemented.
+- Incident visibility is handled through backend logs and Firestore records.
 
 ### Part C: Middleware (Brain + Security Hub)
 
@@ -64,7 +62,6 @@ Guardrail-Security-Layer/
 ## Tech Stack (Target Blueprint)
 
 - Extension: Plasmo, React, Tailwind CSS, Shadow DOM, Firebase Auth client, WebSockets
-- Dashboard: Next.js, shadcn/ui, Recharts, Firestore onSnapshot
 - Middleware: FastAPI, ChromaDB, SentenceTransformers, Presidio, Groq API, Firebase Admin SDK
 
 ## Scratch Setup For Team (End-To-End)
@@ -97,7 +94,7 @@ Optional (improves Presidio NLP quality):
 python -m spacy download en_core_web_lg
 ```
 
-### 3) Node Workspaces Install (Frontend, Dashboard, Extension, SDK JS)
+### 3) Node Workspaces Install (Frontend, Extension, SDK JS)
 
 ```powershell
 npm install
@@ -126,14 +123,12 @@ Project details for this repository:
 - Runtime env files used:
   - `backend/.env`
   - `frontend/.env`
-  - `dashboard/.env`
 - All `.env` files and service-account JSON files are gitignored.
 
 Required env files and locations:
 
 - backend/.env
 - frontend/.env
-- dashboard/.env
 
 4.3 backend/.env values:
 
@@ -178,13 +173,12 @@ $env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\test_fireb
 
 If successful, Firestore gets a `test` collection document with `{"hello": "world"}`.
 
-4.4 Frontend + dashboard Firebase web config:
+4.4 Frontend Firebase web config:
 
 - Values from your Firebase web app are loaded from:
   - frontend/.env (VITE_FIREBASE_*)
-  - dashboard/.env (NEXT_PUBLIC_FIREBASE_*)
 - These are Firebase client config values (public identifiers), not private keys.
-- Do not place service-account JSON or other backend secrets in frontend/dashboard source.
+- Do not place service-account JSON or other backend secrets in frontend source.
 
 4.5 Optional Firebase CLI setup (only if you deploy hosting from this repo):
 
@@ -228,7 +222,6 @@ Run each command from repo root in separate terminals:
 ```powershell
 npm run dev:backend
 npm run dev:frontend
-npm run dev:dashboard
 ```
 
 Extension (current scaffold mode):
@@ -251,11 +244,10 @@ Route map:
 $env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\print_routes.py
 ```
 
-Frontend + dashboard production build check:
+Frontend production build check:
 
 ```powershell
 npm run build --workspace @guardrail/frontend
-npm run build --workspace @guardrail/dashboard
 ```
 
 Secret safety check (before push):
@@ -272,7 +264,7 @@ npm run security:scan-history
 
 ## Upgrade Commands To Match Full Blueprint Exactly
 
-Use this section if your team wants to implement the remaining extension/dashboard features in this sprint.
+Use this section if your team wants to implement the remaining extension features in this sprint.
 
 ### A) Extension Upgrade (Plasmo + React + Tailwind + Firebase Auth)
 
@@ -301,23 +293,6 @@ Then add scripts in extension workspace:
 }
 ```
 
-### B) Dashboard Upgrade (shadcn/ui + Live Firestore onSnapshot)
-
-Install core UI dependencies:
-
-```powershell
-npm install --workspace @guardrail/dashboard class-variance-authority clsx tailwind-merge lucide-react @radix-ui/react-slot
-```
-
-Initialize shadcn/ui in dashboard workspace:
-
-```powershell
-cd dashboard
-npx shadcn@latest init
-```
-
-For live incidents, wire Firestore listener using `onSnapshot()` in dashboard services and subscribe from log/stat components.
-
 ## API Surface
 
 - GET /health
@@ -330,10 +305,10 @@ For live incidents, wire Firestore listener using `onSnapshot()` in dashboard se
 1. Submit safe prompt from frontend and show normal pass-through.
 2. Submit jailbreak-style prompt and show ingress block.
 3. Submit PII-containing prompt and show egress redaction.
-4. Open dashboard and display incident analytics/log entries.
+4. Open frontend and display incident log behavior from live interactions.
 5. Show tests + route map as implementation proof.
 
 ## Implementation Notes
 
 - Firebase and Groq are both optional in local development; middleware has fallback behavior.
-- Extension and dashboard still contain scaffold sections by design, so teams can layer enterprise features without breaking the demo baseline.
+- Extension still contains scaffold sections by design, so teams can layer enterprise features without breaking the demo baseline.

@@ -1,6 +1,6 @@
 # Architecture
 
-This project uses a monorepo with a FastAPI guardrail backend, frontend chat app, dashboard, optional extension, and SDK wrappers.
+This project uses a monorepo with a FastAPI guardrail backend, a unified frontend app, an optional extension, and SDK wrappers.
 
 Traffic flow:
 
