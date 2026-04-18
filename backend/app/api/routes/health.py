@@ -13,7 +13,7 @@ async def root_status() -> dict[str, object]:
         "routes": {
             "health": "/health",
             "chat": "/api/chat",
-            "auth_sync": "/api/auth/sync-user",
+            "guardrail_diagnostics": "/api/diagnostics/guardrails",
             "logs": "/api/logs",
             "docs": "/docs",
         },

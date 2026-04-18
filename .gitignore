@@ -1,46 +1,90 @@
 #paste this into gitignore 
 
-# Node
+# ==========================================
+# 1. NODE.JS (Frontend, Dashboard, Extension)
+# ==========================================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.pnpm-debug.log*
 
-# Python
+# Build outputs
+frontend/dist/
+extension/dist/
+dashboard/.next/
+dashboard/out/
+
+# Vite/Next.js specific
+.vite/
+.next/
+
+# ==========================================
+# 2. PYTHON (Backend & SDK)
+# ==========================================
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
 *.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Testing
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-.venv/
-backend/.venv/
+coverage/
+.coverage
+.coverage.*
+nosetests.xml
+pylintrc
+*pyproject.toml.bak
 
-# Environments and secrets
+# ==========================================
+# 3. ML MODELS & VECTOR DB (ChromaDB/Transformers)
+# ==========================================
+# Ignore the local persistent vector store
+.chroma/
+backend/.chroma/
+**/.chroma/
+
+# Ignore local Hugging Face model downloads/cache if they occur in-project
+.cache/
+backend/.cache/
+huggingface/
+models/
+
+# ==========================================
+# 4. ENVIRONMENTS AND SECRETS (CRITICAL)
+# ==========================================
 .env
-**/.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 **/.env*
-serviceAccountKey.json
+
+# Firebase Credentials
 serviceAccountKey*.json
 **/serviceAccountKey*.json
 backend/credentials/*.json
 !backend/credentials/README.md
 
-# Build outputs
-dist/
-build/
-.next/
-.cache/
-coverage/
-.chroma/
-backend/.chroma/
-
-# IDE
+# ==========================================
+# 5. IDE & SYSTEM
+# ==========================================
 .vscode/*
 !.vscode/extensions.json
-
-# OS
+.idea/
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
