@@ -3,8 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { getLogs } from "../services/api";
-
-const AUDIT_STORAGE_KEY = "underdog-audit-logs";
+import { getRuntimeAuditLogs } from "../services/runtimeStore";
 
 const formatTimestamp = (timestamp, fallback) => {
   if (!timestamp) return fallback || "";
@@ -297,20 +296,13 @@ export default function AuditLogs() {
 
   const userEmail = normalizeString(user?.email);
   const localLogsForUser = useMemo(() => {
-    try {
-      const raw = localStorage.getItem(AUDIT_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      const mapped = Array.isArray(parsed) ? parsed.map(mapLocalLog) : [];
+    const mapped = getRuntimeAuditLogs().map(mapLocalLog);
 
-      if (!userEmail) {
-        return mapped;
-      }
-
-      return mapped.filter((log) => normalizeString(log.email) === userEmail);
-    } catch (storageError) {
-      console.error("Failed to parse audit logs", storageError);
-      return [];
+    if (!userEmail) {
+      return mapped;
     }
+
+    return mapped.filter((log) => normalizeString(log.email) === userEmail);
   }, [userEmail]);
 
   const filteredLocalLogs = useMemo(

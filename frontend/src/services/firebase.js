@@ -1,5 +1,5 @@
 import { getApp, getApps, initializeApp } from "firebase/app"
-import { getAuth } from "firebase/auth"
+import { getAuth, inMemoryPersistence, setPersistence } from "firebase/auth"
 import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore"
 
 const firebaseConfig = {
@@ -11,6 +11,9 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 }
+
+let authInstance = null
+let authPersistenceConfigured = false
 
 function hasRequiredConfig() {
   const required = [
@@ -36,7 +39,19 @@ export function getFirebaseAuth() {
   if (!app) {
     return null
   }
-  return getAuth(app)
+
+  if (!authInstance) {
+    authInstance = getAuth(app)
+  }
+
+  if (!authPersistenceConfigured) {
+    authPersistenceConfigured = true
+    setPersistence(authInstance, inMemoryPersistence).catch(() => {
+      // Ignore persistence setup failures and keep auth usable.
+    })
+  }
+
+  return authInstance
 }
 
 export function getFirestoreDb() {

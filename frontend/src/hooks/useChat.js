@@ -2,23 +2,7 @@ import { useState } from "react"
 
 import { sendChatPrompt } from "../services/api"
 import { getFirebaseAuth } from "../services/firebase"
-
-const CHAT_SESSION_STORAGE_KEY = "guardrail_chat_session_id"
-
-function getOrCreateSessionId() {
-  if (typeof window === "undefined") {
-    return crypto.randomUUID()
-  }
-
-  const existing = window.localStorage.getItem(CHAT_SESSION_STORAGE_KEY)
-  if (existing) {
-    return existing
-  }
-
-  const nextSessionId = crypto.randomUUID()
-  window.localStorage.setItem(CHAT_SESSION_STORAGE_KEY, nextSessionId)
-  return nextSessionId
-}
+import { getRuntimeSessionId } from "../services/runtimeStore"
 
 export function useChat() {
   const [messages, setMessages] = useState([])
@@ -36,7 +20,7 @@ export function useChat() {
         idToken = await auth.currentUser.getIdToken()
       }
 
-      const sessionId = getOrCreateSessionId()
+      const sessionId = getRuntimeSessionId()
       const metadata = {
         source: "frontend_ui",
         client_timestamp: new Date().toISOString(),

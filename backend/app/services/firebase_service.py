@@ -5,11 +5,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from firebase_admin import firestore
+try:
+    from google.cloud.firestore_v1.base_query import FieldFilter
+except Exception:  # pragma: no cover - compatibility fallback
+    FieldFilter = None
 
 from app.guardrails.input.regex_rules import export_threat_patterns
 from firebase_config import get_firestore_db
 
 logger = logging.getLogger(__name__)
+INVALID_USER_SCOPES = {"", "anonymous", "unknown", "token-not-verified", "invalid-token"}
 
 
 class FirebaseService:
@@ -554,9 +559,18 @@ class FirebaseService:
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
-    async def fetch_recent(self, limit: int = 25) -> list[dict]:
+    async def fetch_recent(self, limit: int = 25, user_id: str | None = None) -> list[dict]:
+        normalized_user_id = self._normalize_user_scope(user_id)
+
         if not self.enabled:
-            return self.local_interactions[:limit]
+            local_items = self.local_interactions
+            if normalized_user_id:
+                local_items = [
+                    item
+                    for item in local_items
+                    if str(item.get("user_id", "")).strip() == normalized_user_id
+                ]
+            return local_items[:limit]
 
         db = self.db
 
@@ -564,27 +578,73 @@ class FirebaseService:
             if db is None:
                 raise RuntimeError("Firestore client is not initialized.")
 
-            docs = (
-                db
-                .collection(self.interactions_collection)
-                .order_by("timestamp", direction=firestore.Query.DESCENDING)
-                .limit(limit)
-                .stream()
-            )
+            query = db.collection(self.interactions_collection)
+            items = None
 
-            items = [{"id": doc.id, **doc.to_dict()} for doc in docs]
-            return [
+            if normalized_user_id:
+                try:
+                    scoped_limit = min(max(limit * 20, limit), 5000)
+                    if FieldFilter is not None:
+                        scoped_query = query.where(filter=FieldFilter("user_id", "==", normalized_user_id))
+                    else:
+                        scoped_query = query.where("user_id", "==", normalized_user_id)
+                    scoped_docs = (
+                        scoped_query
+                        .limit(scoped_limit)
+                        .stream()
+                    )
+                    items = [{"id": doc.id, **doc.to_dict()} for doc in scoped_docs]
+                except Exception as scoped_error:
+                    logger.warning(
+                        "Scoped Firestore query failed for user %s. Details: %s",
+                        normalized_user_id,
+                        scoped_error,
+                    )
+                    return []
+
+            if items is None:
+                expanded_limit = min(max(limit * 8, limit), 1000)
+                docs = (
+                    query
+                    .order_by("timestamp", direction=firestore.Query.DESCENDING)
+                    .limit(expanded_limit)
+                    .stream()
+                )
+                items = [{"id": doc.id, **doc.to_dict()} for doc in docs]
+
+            cleaned_items = [
                 item
                 for item in items
                 if isinstance(item.get("input_text"), str) and bool(item.get("input_text"))
             ]
+
+            cleaned_items.sort(
+                key=lambda item: self._parse_log_timestamp(item),
+                reverse=True,
+            )
+
+            if normalized_user_id:
+                cleaned_items = [
+                    item
+                    for item in cleaned_items
+                    if str(item.get("user_id", "")).strip() == normalized_user_id
+                ]
+
+            return cleaned_items[:limit]
 
         try:
             return await asyncio.to_thread(_read)
         except Exception as error:
             logger.warning("Firestore read failed. Falling back to local mode. Details: %s", error)
             self.enabled = False
-            return self.local_interactions[:limit]
+            local_items = self.local_interactions
+            if normalized_user_id:
+                local_items = [
+                    item
+                    for item in local_items
+                    if str(item.get("user_id", "")).strip() == normalized_user_id
+                ]
+            return local_items[:limit]
 
     async def fetch_policy_config(self) -> dict[str, object]:
         snapshot = await self.fetch_guardrail_snapshot()
@@ -721,8 +781,14 @@ class FirebaseService:
 
         return datetime.now(timezone.utc)
 
-    async def fetch_stats(self, limit: int = 250) -> dict[str, object]:
-        logs = await self.fetch_recent(limit=max(1, min(limit, 500)))
+    def _normalize_user_scope(self, user_id: str | None) -> str | None:
+        normalized = str(user_id or "").strip()
+        if not normalized or normalized in INVALID_USER_SCOPES:
+            return None
+        return normalized
+
+    async def fetch_stats(self, limit: int = 250, user_id: str | None = None) -> dict[str, object]:
+        logs = await self.fetch_recent(limit=max(1, min(limit, 500)), user_id=user_id)
         now = datetime.now(timezone.utc)
         today = now.date()
 

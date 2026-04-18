@@ -1,9 +1,55 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
-from app.api.dependencies import get_firebase_service
+from app.api.dependencies import get_auth_service, get_firebase_service
+from app.services.auth_service import AuthService
 from app.services.firebase_service import FirebaseService
 
 router = APIRouter()
+
+INVALID_UID_VALUES = {"", "anonymous", "unknown", "token-not-verified", "invalid-token"}
+
+
+def _extract_bearer_token(authorization: str | None) -> str:
+    raw_value = str(authorization or "").strip()
+    if not raw_value:
+        return ""
+
+    if raw_value.lower().startswith("bearer "):
+        return raw_value[7:].strip()
+
+    return raw_value
+
+
+def _is_valid_uid(value: str | None) -> bool:
+    uid = str(value or "").strip()
+    return bool(uid) and uid not in INVALID_UID_VALUES
+
+
+async def _resolve_request_uid(
+    *,
+    auth_service: AuthService,
+    authorization: str | None,
+    header_user_id: str | None,
+) -> str:
+    bearer_token = _extract_bearer_token(authorization)
+    fallback_uid = str(header_user_id or "").strip()
+
+    if bearer_token:
+        principal = await auth_service.verify_id_token(bearer_token)
+        verified_uid = str(principal.get("uid", "")).strip()
+
+        if not _is_valid_uid(verified_uid):
+            raise HTTPException(status_code=401, detail="Invalid authentication token.")
+
+        if fallback_uid and fallback_uid != verified_uid:
+            raise HTTPException(status_code=401, detail="Authenticated user mismatch.")
+
+        return verified_uid
+
+    if _is_valid_uid(fallback_uid):
+        return fallback_uid
+
+    raise HTTPException(status_code=401, detail="Authentication required.")
 
 
 def _risk_score(item: dict) -> int:
@@ -75,15 +121,24 @@ def _matches_search(item: dict, search: str | None) -> bool:
 @router.get("/logs")
 async def list_recent_logs(
     firebase_service: FirebaseService = Depends(get_firebase_service),
+    auth_service: AuthService = Depends(get_auth_service),
     limit: int = Query(default=25, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     decision: str | None = Query(default=None),
     level: str | None = Query(default=None),
     search: str | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    x_guardrail_user_id: str | None = Header(default=None, alias="X-Guardrail-User-Id"),
 ) -> dict:
+    user_id = await _resolve_request_uid(
+        auth_service=auth_service,
+        authorization=authorization,
+        header_user_id=x_guardrail_user_id,
+    )
+
     needs_filter = bool(decision or level or search)
     fetch_limit = 250 if needs_filter else min(max(limit + offset, 1), 200)
-    logs = await firebase_service.fetch_recent(limit=fetch_limit)
+    logs = await firebase_service.fetch_recent(limit=fetch_limit, user_id=user_id)
 
     filtered = [
         item
@@ -106,6 +161,14 @@ async def list_recent_logs(
 @router.get("/stats")
 async def get_live_stats(
     firebase_service: FirebaseService = Depends(get_firebase_service),
+    auth_service: AuthService = Depends(get_auth_service),
     limit: int = Query(default=250, ge=25, le=500),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    x_guardrail_user_id: str | None = Header(default=None, alias="X-Guardrail-User-Id"),
 ) -> dict:
-    return await firebase_service.fetch_stats(limit=limit)
+    user_id = await _resolve_request_uid(
+        auth_service=auth_service,
+        authorization=authorization,
+        header_user_id=x_guardrail_user_id,
+    )
+    return await firebase_service.fetch_stats(limit=limit, user_id=user_id)

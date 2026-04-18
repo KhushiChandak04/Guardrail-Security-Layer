@@ -11,6 +11,7 @@ import {
 } from "firebase/auth";
 
 import { getFirebaseAuth, syncAuthUserToFirestore } from "../services/firebase";
+import { clearRuntimeAuditLogs, resetRuntimeSessionId } from "../services/runtimeStore";
 
 const AuthContext = createContext(undefined);
 const TRANSIENT_CACHE_KEYS = [
@@ -20,8 +21,13 @@ const TRANSIENT_CACHE_KEYS = [
 
 async function clearRuntimeClientCache() {
   if (typeof window === "undefined") {
+    clearRuntimeAuditLogs();
+    resetRuntimeSessionId();
     return;
   }
+
+  clearRuntimeAuditLogs();
+  resetRuntimeSessionId();
 
   try {
     TRANSIENT_CACHE_KEYS.forEach((key) => {

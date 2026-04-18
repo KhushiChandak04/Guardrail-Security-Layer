@@ -6,14 +6,8 @@ export default function ThemeProvider({ children }) {
   const [theme, setTheme] = useState("light");
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("underdog-theme") || "light";
-    setTheme(savedTheme);
-  }, []);
-
-  useEffect(() => {
     document.body.classList.remove("theme-light", "theme-dark");
     document.body.classList.add(`theme-${theme}`);
-    localStorage.setItem("underdog-theme", theme);
   }, [theme]);
 
   const toggleTheme = () => {

@@ -5,47 +5,14 @@ import { scanDocument } from "../services/api";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { sendChatPrompt } from "../services/api";
 import { getFirebaseAuth } from "../services/firebase";
-
-const AUDIT_STORAGE_KEY = "underdog-audit-logs";
-const SESSION_STORAGE_KEY = "underdog_guardrail_session_id";
-
-const loadAuditLogs = () => {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  try {
-    const raw = window.localStorage.getItem(AUDIT_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (error) {
-    console.error("Failed to read audit logs", error);
-    return [];
-  }
-};
+import { appendRuntimeAuditLog, getRuntimeSessionId } from "../services/runtimeStore";
 
 const saveAuditLog = (entry) => {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  const logs = loadAuditLogs();
-  const next = [entry, ...logs].slice(0, 200);
-  window.localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(next));
+  appendRuntimeAuditLog(entry);
 };
 
 function getOrCreateSessionId() {
-  if (typeof window === "undefined") {
-    return crypto.randomUUID();
-  }
-
-  const existing = window.localStorage.getItem(SESSION_STORAGE_KEY);
-  if (existing) {
-    return existing;
-  }
-
-  const nextSessionId = crypto.randomUUID();
-  window.localStorage.setItem(SESSION_STORAGE_KEY, nextSessionId);
-  return nextSessionId;
+  return getRuntimeSessionId();
 }
 
 function riskLevelToScore(level) {

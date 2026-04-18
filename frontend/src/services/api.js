@@ -67,6 +67,25 @@ async function resolveCurrentIdToken() {
   }
 }
 
+async function resolveIdentityHeaders(headers = {}) {
+  const auth = getFirebaseAuth();
+  const user = auth?.currentUser;
+  const identityHeaders = {};
+
+  if (user?.uid && !("X-Guardrail-User-Id" in headers)) {
+    identityHeaders["X-Guardrail-User-Id"] = user.uid;
+  }
+
+  if (!("Authorization" in headers)) {
+    const idToken = await resolveCurrentIdToken();
+    if (idToken) {
+      identityHeaders.Authorization = `Bearer ${idToken}`;
+    }
+  }
+
+  return identityHeaders;
+}
+
 function buildErrorMessage(payload, status) {
   if (payload && typeof payload === "object") {
     if (typeof payload.detail === "string" && payload.detail) {
@@ -81,6 +100,7 @@ function buildErrorMessage(payload, status) {
 
 async function request(path, { method = "GET", body, headers = {} } = {}) {
   const apiBases = buildApiBaseCandidates();
+  const identityHeaders = await resolveIdentityHeaders(headers);
   let lastNetworkError = null;
 
   for (const apiBase of apiBases) {
@@ -94,6 +114,7 @@ async function request(path, { method = "GET", body, headers = {} } = {}) {
         headers: {
           "Content-Type": "application/json",
           ...NO_STORE_HEADERS,
+          ...identityHeaders,
           ...headers,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
