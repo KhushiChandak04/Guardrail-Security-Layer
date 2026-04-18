@@ -1,19 +1,57 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
+import { scanDocument } from "../services/api";
 
 export default function SecureChat() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [currentRisk, setCurrentRisk] = useState(null);
+  const [scanResult, setScanResult] = useState(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanNotice, setScanNotice] = useState("");
+  const [hasPendingDocumentScan, setHasPendingDocumentScan] = useState(false);
+  const fileInputRef = useRef(null);
 
-  const handleSend = async () => {
-    if (!inputText.trim()) return;
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
 
+  const handleFileSelect = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) return;
+
+    setScanLoading(true);
+    setScanNotice("Scanning document...");
+
+    try {
+      const result = await scanDocument(file);
+      setScanResult(result);
+      setHasPendingDocumentScan(true);
+
+      if (result.action === "BLOCK") {
+        setScanNotice("⚠️ Sensitive document detected. Upload blocked.");
+      } else if (result.action === "MASK") {
+        setScanNotice("Sensitive data masked before sending");
+      } else {
+        setScanNotice("");
+      }
+    } catch (error) {
+      setScanResult(null);
+      setHasPendingDocumentScan(false);
+      setScanNotice(error instanceof Error ? error.message : "Unable to scan document.");
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
+  const sendMessage = (messageContent) => {
     const userMessage = {
       id: Date.now(),
       role: "user",
-      content: inputText,
+      content: messageContent,
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -22,7 +60,7 @@ export default function SecureChat() {
     setCurrentRisk(null);
 
     // TODO: replace mock with real API call
-    // await api.secureChat({ prompt: inputText })
+    // await api.secureChat({ prompt: messageContent })
     setTimeout(() => {
       const mockResponse = {
         decision: "REDACT",
@@ -32,8 +70,8 @@ export default function SecureChat() {
         detected_issues: [
           { type: "Indian PII", detail: "Aadhaar number", confidence: 0.98 },
         ],
-        sanitized_prompt: "My [AADHAAR_REDACTED], help me with KYC",
-        llm_response: "Sure! For KYC you will need valid ID proof...",
+        sanitized_prompt: messageContent,
+        llm_response: `Sure! For KYC you will need valid ID proof... (${messageContent})`,
         output_clean: true,
         pii_in_output: [],
       };
@@ -57,6 +95,27 @@ export default function SecureChat() {
       setMessages((prev) => [...prev, guardMessage, assistantMessage]);
       setIsLoading(false);
     }, 1200);
+  };
+
+  const handleSend = async () => {
+    if (!inputText.trim()) return;
+
+    if (hasPendingDocumentScan && scanResult?.action === "BLOCK") {
+      setScanNotice("⚠️ Sensitive document detected. Upload blocked.");
+      return;
+    }
+
+    const outgoingContent =
+      hasPendingDocumentScan && scanResult?.action === "MASK" && scanResult?.sanitized_text
+        ? scanResult.sanitized_text
+        : inputText;
+
+    if (hasPendingDocumentScan && scanResult?.action === "MASK") {
+      setScanNotice("Sensitive data masked before sending");
+    }
+
+    sendMessage(outgoingContent);
+    setHasPendingDocumentScan(false);
   };
 
   return (
@@ -157,8 +216,31 @@ export default function SecureChat() {
               padding: "0.875rem",
               display: "flex",
               gap: "0.5rem",
+              alignItems: "flex-end",
+              flexWrap: "wrap",
             }}
           >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.txt,application/pdf,text/plain"
+              onChange={handleFileSelect}
+              style={{ display: "none" }}
+            />
+            <button
+              type="button"
+              onClick={handleAttachClick}
+              disabled={scanLoading || isLoading}
+              className="btn"
+              style={{
+                height: "44px",
+                minWidth: "72px",
+                border: "1px solid var(--border)",
+                background: "var(--surface)",
+              }}
+            >
+              Attach
+            </button>
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
@@ -184,12 +266,24 @@ export default function SecureChat() {
             />
             <button
               onClick={handleSend}
-              disabled={!inputText.trim() || isLoading}
+              disabled={!inputText.trim() || isLoading || scanLoading}
               className="btn btn-gold"
               style={{ height: "44px", minWidth: "72px" }}
             >
               Send
             </button>
+            {scanNotice && (
+              <div
+                style={{
+                  width: "100%",
+                  fontSize: "0.75rem",
+                  color: scanResult?.action === "BLOCK" ? "var(--danger)" : "var(--brown-light)",
+                  marginTop: "-0.25rem",
+                }}
+              >
+                {scanNotice}
+              </div>
+            )}
           </div>
         </div>
         {/* Right Panel */}

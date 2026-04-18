@@ -91,6 +91,7 @@ from app.utils.security_utils import normalize_text
 from app.guardrails.input.regex_rules import detect_system_extraction, detect_heuristic_injection
 from app.guardrails.input.ml_ensemble import MLEnsembleDetector
 from app.guardrails.output.redaction import mask_sensitive
+from app.guardrails.validators.document_validator import sanitize_document_text, scan_document
 
 @dataclass
 class InputVerdict:
@@ -98,6 +99,14 @@ class InputVerdict:
     reason: str
     risk_level: str
     sanitized_prompt: str
+
+
+@dataclass
+class DocumentVerdict:
+    blocked: bool
+    reason: str
+    risk_level: str
+    sanitized_text: str
 
 class GuardrailEngine:
     def __init__(self, vector_service: VectorService):
@@ -165,6 +174,30 @@ class GuardrailEngine:
             reason=" | ".join(list(set(reasons))) if reasons else "Safe",
             risk_level="high" if action == "block" else ("medium" if action == "sanitize" else "low"),
             sanitized_prompt=sanitized_prompt
+        )
+
+    def validate_document(self, document_text: str) -> DocumentVerdict:
+        scan_result = scan_document(document_text or "")
+        risk = str(scan_result.get("risk", "LOW")).upper()
+        reason = str(scan_result.get("message", "Document scanned."))
+        blocked = risk == "HIGH"
+        sanitized = sanitize_document_text(document_text or "")
+
+        return DocumentVerdict(
+            blocked=blocked,
+            reason=reason,
+            risk_level=risk.lower(),
+            sanitized_text=sanitized,
+        )
+
+    def build_llm_input(self, *, prompt: str, sanitized_document_text: str | None = None) -> str:
+        if not sanitized_document_text:
+            return prompt
+
+        return (
+            f"{prompt}\n\n"
+            "Document Context (sanitized):\n"
+            f"{sanitized_document_text}"
         )
 
     def validate_output(self, text: str) -> tuple[str, list[str], str]:

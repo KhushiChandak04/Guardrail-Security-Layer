@@ -41,3 +41,30 @@ export async function getLogs({ decision, level, search, limit, offset } = {}) {
 export async function getStats() {
   return fetchWithAuth("/api/stats");
 }
+
+export async function scanDocument(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${BASE_URL}/scan-document`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let errorMessage = `HTTP error! status: ${response.status}`;
+
+    try {
+      const errorData = await response.json();
+      if (errorData?.detail) {
+        errorMessage = errorData.detail;
+      }
+    } catch {
+      // Keep the default error message when the response body is not JSON.
+    }
+
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}

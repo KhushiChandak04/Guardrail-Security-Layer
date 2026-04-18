@@ -11,3 +11,9 @@ class ChatResponse(BaseModel):
     output_risk: Literal["low", "medium", "high"]
     redactions: list[str] = Field(default_factory=list)
     timestamp: str
+
+
+class DocumentScanResponse(BaseModel):
+    risk: Literal["LOW", "MEDIUM", "HIGH"]
+    detected: list[str] = Field(default_factory=list)
+    message: str

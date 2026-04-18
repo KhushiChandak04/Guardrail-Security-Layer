@@ -37,6 +37,8 @@ async def process_chat(
     # input_was_sanitized = bool(input_verdict.sanitized_prompt and input_verdict.sanitized_prompt != payload.prompt)
     interaction_metadata.setdefault("source", request_source)
     interaction_metadata.setdefault("prompt_length", str(len(payload.prompt)))
+    document_was_provided = bool(payload.document_text and payload.document_text.strip())
+    interaction_metadata.setdefault("document_provided", str(document_was_provided).lower())
 
     # Add the await keyword here since validate_input now runs concurrent async ML tasks
     input_verdict = await guardrail_engine.validate_input(payload.prompt) 
@@ -45,6 +47,46 @@ async def process_chat(
     interaction_metadata.setdefault("ingress_risk", input_verdict.risk_level)
     interaction_metadata.setdefault("ingress_reason", input_verdict.reason)
     interaction_metadata.setdefault("input_was_sanitized", str(input_was_sanitized).lower())
+
+    sanitized_document_text: str | None = None
+    if document_was_provided:
+        document_verdict = guardrail_engine.validate_document(payload.document_text or "")
+        interaction_metadata.setdefault("document_risk", document_verdict.risk_level)
+        interaction_metadata.setdefault("document_reason", document_verdict.reason)
+
+        if document_verdict.blocked:
+            interaction_timestamp = now_utc_iso()
+            blocked_response = ChatResponse(
+                request_id=request_id,
+                message=f"Request blocked: {document_verdict.reason}",
+                blocked=True,
+                ingress_risk="high",
+                output_risk="low",
+                redactions=[],
+                timestamp=interaction_timestamp,
+            )
+
+            await firebase_service.log_interaction(
+                user_id=user_id,
+                user_email=user_email,
+                session_id=payload.session_id,
+                prompt_text=payload.prompt,
+                input_sanitized=input_was_sanitized,
+                input_risk_level="high",
+                input_reason=document_verdict.reason,
+                blocked=True,
+                model=llm_service.model,
+                llm_latency_ms=0,
+                output_text=None,
+                output_risk_level=None,
+                redactions=[],
+                metadata=interaction_metadata,
+                request_id=request_id,
+                timestamp=interaction_timestamp,
+            )
+            return blocked_response
+
+        sanitized_document_text = document_verdict.sanitized_text
 
     if input_verdict.blocked:
         interaction_timestamp = now_utc_iso()
@@ -79,7 +121,11 @@ async def process_chat(
         return blocked_response
 
     llm_started_at = perf_counter()
-    llm_output = await llm_service.generate(input_verdict.sanitized_prompt)
+    llm_input = guardrail_engine.build_llm_input(
+        prompt=input_verdict.sanitized_prompt,
+        sanitized_document_text=sanitized_document_text,
+    )
+    llm_output = await llm_service.generate(llm_input)
     llm_latency_ms = int((perf_counter() - llm_started_at) * 1000)
     safe_output, redactions, output_risk = guardrail_engine.validate_output(llm_output)
 
