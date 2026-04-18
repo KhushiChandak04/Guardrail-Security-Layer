@@ -9,7 +9,13 @@
     "sdk/js"
   ],
   "scripts": {
-    "dev:backend": ".venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --app-dir backend",
+    "ports:free:backend": "powershell -ExecutionPolicy Bypass -File scripts/free_ports.ps1 -Ports 8000",
+    "ports:free:frontend": "powershell -ExecutionPolicy Bypass -File scripts/free_ports.ps1 -Ports 5173",
+    "predev:backend": "npm run ports:free:backend",
+    "predev:backend:stable": "npm run ports:free:backend",
+    "predev:frontend": "npm run ports:free:frontend",
+    "dev:backend": ".venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --reload-dir backend --host 127.0.0.1 --port 8000 --app-dir backend",
+    "dev:backend:stable": ".venv\\Scripts\\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --app-dir backend",
     "dev:frontend": "npm run dev --workspace @guardrail/frontend",
     "dev:extension": "npm run dev --workspace @guardrail/extension",
     "build": "npm run build --workspaces",

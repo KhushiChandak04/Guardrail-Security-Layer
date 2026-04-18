@@ -180,6 +180,51 @@ class FirebaseService:
 
         return await self.bootstrap_schema()
 
+    async def sync_user_profile(
+        self,
+        *,
+        user_id: str,
+        user_email: str,
+        display_name: str | None = None,
+    ) -> bool:
+        if not user_id or user_id in {"anonymous", "token-not-verified", "invalid-token", "unknown"}:
+            return False
+
+        if not self.enabled:
+            return False
+
+        await self.ensure_schema_initialized()
+
+        db = self.db
+        timestamp = datetime.now(timezone.utc)
+
+        def _write_user_profile() -> None:
+            if db is None:
+                raise RuntimeError("Firestore client is not initialized.")
+
+            user_ref = db.collection(self.users_collection).document(user_id)
+            user_snapshot = user_ref.get()
+            existing_user = user_snapshot.to_dict() if user_snapshot.exists else {}
+
+            payload: dict[str, object] = {
+                "email": user_email,
+                "role": existing_user.get("role", "user"),
+                "created_at": existing_user.get("created_at", timestamp),
+                "last_login_at": timestamp,
+            }
+
+            if display_name:
+                payload["display_name"] = display_name
+
+            user_ref.set(payload, merge=True)
+
+        try:
+            await asyncio.to_thread(_write_user_profile)
+            return True
+        except Exception as error:
+            logger.warning("Firestore user sync failed. Details: %s", error)
+            return False
+
     async def log_interaction(
         self,
         *,

@@ -8,7 +8,7 @@ import {
   signOut,
 } from "firebase/auth"
 
-import { getFirebaseAuth } from "../services/firebase"
+import { getFirebaseAuth, syncAuthUserToFirestore } from "../services/firebase"
 
 export default function AuthPanel() {
   const [user, setUser] = useState(null)
@@ -39,7 +39,8 @@ export default function AuthPanel() {
     setBusy(true)
     setError("")
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider())
+      const credentials = await signInWithPopup(auth, new GoogleAuthProvider())
+      await syncAuthUserToFirestore(credentials.user)
     } catch (authError) {
       setError(authError.message)
     } finally {
@@ -62,11 +63,17 @@ export default function AuthPanel() {
     setBusy(true)
     setError("")
     try {
+      let signedInUser
+
       if (createMode) {
-        await createUserWithEmailAndPassword(auth, email, password)
+        const credentials = await createUserWithEmailAndPassword(auth, email, password)
+        signedInUser = credentials.user
       } else {
-        await signInWithEmailAndPassword(auth, email, password)
+        const credentials = await signInWithEmailAndPassword(auth, email, password)
+        signedInUser = credentials.user
       }
+
+      await syncAuthUserToFirestore(signedInUser)
       setPassword("")
     } catch (authError) {
       setError(authError.message)

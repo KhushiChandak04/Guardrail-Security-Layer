@@ -10,7 +10,7 @@ import {
 } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
 
-import { getFirebaseAuth } from "../services/firebase";
+import { getFirebaseAuth, syncAuthUserToFirestore } from "../services/firebase";
 import "./AuthPage.css";
 
 export default function AuthPage() {
@@ -59,15 +59,20 @@ export default function AuthPage() {
     try {
       const email = form.email.trim();
       const password = form.password.trim();
+      let signedInUser;
 
       if (mode === "signup") {
         const credentials = await createUserWithEmailAndPassword(auth, email, password);
+        signedInUser = credentials.user;
         if (form.name.trim()) {
           await updateProfile(credentials.user, { displayName: form.name.trim() });
         }
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        const credentials = await signInWithEmailAndPassword(auth, email, password);
+        signedInUser = credentials.user;
       }
+
+      await syncAuthUserToFirestore(signedInUser);
 
       setForm((previous) => ({ ...previous, password: "" }));
       navigate("/chat");
@@ -87,7 +92,8 @@ export default function AuthPage() {
     setLoading(true);
     setError("");
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
+      const credentials = await signInWithPopup(auth, new GoogleAuthProvider());
+      await syncAuthUserToFirestore(credentials.user);
       navigate("/chat");
     } catch (authError) {
       setError(authError?.message || "Google sign-in failed.");

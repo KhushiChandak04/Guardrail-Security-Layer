@@ -134,7 +134,7 @@ Required env files and locations:
 
 ```dotenv
 APP_ENV=development
-APP_HOST=0.0.0.0
+APP_HOST=127.0.0.1
 APP_PORT=8000
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 
@@ -179,6 +179,11 @@ If successful, Firestore gets a `test` collection document with `{"hello": "worl
   - frontend/.env (VITE_FIREBASE_*)
 - These are Firebase client config values (public identifiers), not private keys.
 - Do not place service-account JSON or other backend secrets in frontend source.
+- Optional frontend API override (recommended for local consistency):
+
+```dotenv
+VITE_API_BASE_URL=http://127.0.0.1:8000/api
+```
 
 4.5 Optional Firebase CLI setup (only if you deploy hosting from this repo):
 
@@ -217,11 +222,37 @@ Detailed schema reference: docs/firestore_schema.md
 
 ### 5) Run Services (Current Codebase)
 
-Run each command from repo root in separate terminals:
+Run from repo root in two separate terminals:
+
+Terminal 1 (backend):
+
+```powershell
+cd backend
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
+```
+
+Terminal 2 (frontend):
+
+```powershell
+npm run dev:frontend
+```
+
+Notes:
+
+- Backend accepts localhost frontend origins on any port (for example 5173, 5174, 5175), so Vite port auto-switching should not cause CORS failures.
+- If backend appears to restart repeatedly, ensure you are using the command above with `--reload-dir app` from inside the backend folder.
+- Root scripts now auto-clear occupied dev ports before startup (`8000` for backend, `5173` for frontend) so local URLs stay fixed.
+
+Optional backend shortcut from repo root:
 
 ```powershell
 npm run dev:backend
-npm run dev:frontend
+```
+
+Stable backend mode (no auto-reload, fewer connection resets during long browser sessions):
+
+```powershell
+npm run dev:backend:stable
 ```
 
 Extension (current scaffold mode):
@@ -262,6 +293,31 @@ Optional full-history check:
 npm run security:scan-history
 ```
 
+### 7) Troubleshooting: ERR_CONNECTION_RESET
+
+If browser shows `ERR_CONNECTION_RESET` for backend:
+
+1. Use HTTP only (not HTTPS):
+  - `http://127.0.0.1:8000/`
+  - `http://localhost:8000/`
+2. Do not use `0.0.0.0` in browser URL. It is a bind address, not a client URL.
+3. For maximum stability during demo, run:
+
+```powershell
+npm run dev:backend:stable
+```
+
+4. Verify listener:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8000 -State Listen
+```
+
+Expected behavior:
+- `GET /` returns service JSON with routes
+- `GET /health` returns `{"status":"ok"}`
+- `POST /api/auth/sync-user` with invalid token returns `401` (this confirms route is live + auth check is active)
+
 ## Upgrade Commands To Match Full Blueprint Exactly
 
 Use this section if your team wants to implement the remaining extension features in this sprint.
@@ -295,8 +351,10 @@ Then add scripts in extension workspace:
 
 ## API Surface
 
+- GET /
 - GET /health
 - POST /api/chat
+- POST /api/auth/sync-user
 - GET /api/logs
 - WS /api/ws/chat
 

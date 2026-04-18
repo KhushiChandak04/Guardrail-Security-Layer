@@ -17,6 +17,7 @@ class AuthService:
             return {
                 "uid": str(decoded.get("uid", "unknown")),
                 "email": str(decoded.get("email", "")),
+                "name": str(decoded.get("name", "")),
             }
         except Exception:
             return {"uid": "invalid-token"}
