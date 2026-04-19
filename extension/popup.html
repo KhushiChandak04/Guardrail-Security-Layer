@@ -96,17 +96,6 @@
         text-transform: uppercase;
       }
 
-      .live-badge {
-        align-self: flex-start;
-        margin-top: 0.25rem;
-        font-size: 0.68rem;
-        background: var(--success-bg);
-        color: var(--success-text);
-        border: 1px solid var(--success);
-        border-radius: 999px;
-        padding: 0.2rem 0.5rem;
-        font-weight: 600;
-      }
 
       .label {
         font-size: 0.7rem;
@@ -263,6 +252,7 @@
         white-space: pre-wrap;
         color: var(--brown-dark);
       }
+
     </style>
   </head>
   <body>
@@ -289,7 +279,6 @@
           <div class="brand">Underdog Guardrail</div>
         </div>
         <div class="subtitle">Prompt Safety</div>
-        <div class="live-badge">Live · Monitoring</div>
       </header>
 
       <label class="label" for="promptInput">Prompt</label>
@@ -314,7 +303,7 @@
         </div>
         <div class="result-detail hidden" id="safeDetail">
           <div class="detail-title">SAFE</div>
-          <div class="detail-text">No issues detected.</div>
+          <div class="detail-text" id="safeText">No issues detected.</div>
         </div>
         <div class="result-detail hidden" id="flaggedDetail">
           <div class="detail-title">FLAGGED - Guardrail Details</div>

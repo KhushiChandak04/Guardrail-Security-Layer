@@ -86,7 +86,7 @@ function useAuthProvider() {
     const credentials = await signInWithPopup(auth, new GoogleAuthProvider());
     await syncAuthUserToFirestore(credentials.user);
     await clearRuntimeClientCache();
-    navigate(`/dashboard?fresh=${Date.now()}`, { replace: true });
+    navigate("/dashboard", { replace: true });
     return credentials.user;
   };
 
@@ -120,7 +120,7 @@ function useAuthProvider() {
 
     await syncAuthUserToFirestore(signedInUser, role);
     await clearRuntimeClientCache();
-    navigate(`/dashboard?fresh=${Date.now()}`, { replace: true });
+    navigate("/dashboard", { replace: true });
     return signedInUser;
   };
 

@@ -27,9 +27,14 @@ async def process_chat(
 ) -> ChatResponse:
     request_id = str(uuid4())
     user = await auth_service.verify_id_token(payload.id_token)
-    user_id = user.get("uid", "anonymous")
-    user_email = user.get("email", "")
+    user_id = str(user.get("uid", "anonymous") or "anonymous")
+    user_email = str(user.get("email", "") or "")
     interaction_metadata = dict(payload.metadata)
+
+    if user_id in {"invalid-token", "token-not-verified", "unknown"}:
+        interaction_metadata.setdefault("auth_context", "unverified_token_fallback")
+        user_id = "anonymous"
+        user_email = ""
     # interaction_metadata.setdefault("source", request_source)
     # interaction_metadata.setdefault("prompt_length", str(len(payload.prompt)))
 

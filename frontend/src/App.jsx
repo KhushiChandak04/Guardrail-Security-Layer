@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthProvider } from "./hooks/useAuth.jsx";
 import ThemeProvider from "./context/ThemeContext";
@@ -22,6 +22,7 @@ function App() {
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/extension-required" element={<Navigate to="/dashboard" replace />} />
             <Route path="/solutions" element={<OurSolutions />} />
             <Route
               path="/dashboard"

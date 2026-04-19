@@ -1,5 +1,5 @@
 import { getApp, getApps, initializeApp } from "firebase/app"
-import { getAuth, inMemoryPersistence, setPersistence } from "firebase/auth"
+import { browserSessionPersistence, getAuth, setPersistence } from "firebase/auth"
 import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore"
 
 const firebaseConfig = {
@@ -46,7 +46,7 @@ export function getFirebaseAuth() {
 
   if (!authPersistenceConfigured) {
     authPersistenceConfigured = true
-    setPersistence(authInstance, inMemoryPersistence).catch(() => {
+    setPersistence(authInstance, browserSessionPersistence).catch(() => {
       // Ignore persistence setup failures and keep auth usable.
     })
   }

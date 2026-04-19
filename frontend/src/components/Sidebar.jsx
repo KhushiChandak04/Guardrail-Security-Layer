@@ -24,10 +24,12 @@ export default function Sidebar() {
 
         const attackRate = Number(stats?.attack_rate || 0);
         const cleanRate = Number(stats?.clean_rate || 0);
+
         const blendedRisk = Math.min(
           100,
           Math.max(0, Math.round(attackRate * 0.6 + (100 - cleanRate) * 0.4)),
         );
+
         setRisk(blendedRisk);
       } catch {
         if (isMounted) {
@@ -58,7 +60,23 @@ export default function Sidebar() {
     return "var(--danger)";
   };
 
+  const getRiskBand = (r) => {
+    if (r > 75) return "CRITICAL";
+    if (r > 50) return "HIGH";
+    if (r > 25) return "MEDIUM";
+    return "LOW";
+  };
+
+  const getRiskBadgeClass = (r) => {
+    if (r > 75) return "critical";
+    if (r > 50) return "high";
+    if (r > 25) return "medium";
+    return "low";
+  };
+
   const riskColor = getRiskColor(risk);
+  const riskBand = getRiskBand(risk);
+  const riskBadgeClass = getRiskBadgeClass(risk);
 
   return (
     <aside
@@ -151,11 +169,16 @@ export default function Sidebar() {
             Session Risk
           </label>
           <div
+            className="session-risk-panel"
             style={{
               display: "flex",
               alignItems: "center",
               gap: "0.75rem",
               marginTop: "0.5rem",
+              width: "100%",
+              background: "transparent",
+              border: "none",
+              padding: 0,
             }}
           >
             <svg width="40" height="40" viewBox="0 0 36 36">
@@ -189,16 +212,10 @@ export default function Sidebar() {
                 {riskReady ? risk : "--"}
               </div>
               <div
-                className={`badge badge-${risk > 75 ? "critical" : risk > 50 ? "high" : risk > 25 ? "medium" : "low"}`}
+                className={`badge badge-${riskBadgeClass}`}
                 style={{ fontSize: "0.6rem", padding: "2px 6px" }}
               >
-                {risk > 75
-                  ? "CRITICAL"
-                  : risk > 50
-                    ? "HIGH"
-                    : risk > 25
-                      ? "MEDIUM"
-                      : "LOW"}
+                {riskBand}
               </div>
             </div>
           </div>

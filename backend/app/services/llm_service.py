@@ -81,9 +81,9 @@ class LLMService:
         """
 
         try:
-            # We hardcode llama3-8b-8192 here because it is exceptionally fast for structural JSON tasks
+            # Use configured active model so pre-processing stays aligned with current deploy settings.
             response = await self.client.chat.completions.create(
-                model="llama3-8b-8192", 
+                model=self.model,
                 messages=[
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": user_text}

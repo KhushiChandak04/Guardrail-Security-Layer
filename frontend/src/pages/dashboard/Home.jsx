@@ -8,7 +8,97 @@ import { getLogs, getStats } from "../../services/api";
 import { getFirestoreDb } from "../../services/firebase";
 
 const DASHBOARD_POLL_INTERVAL_MS = 15000;
-const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const LOGS_PAGE_SIZE = 200;
+
+function resolveLogTargetForWindow(windowDays) {
+  const days = Math.max(1, Number(windowDays) || 7);
+  if (days >= 30) {
+    return 600;
+  }
+  if (days >= 14) {
+    return 400;
+  }
+  return LOGS_PAGE_SIZE;
+}
+
+function dedupeLogs(rows) {
+  const unique = [];
+  const seen = new Set();
+
+  rows.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    const fallbackKey = [
+      String(item?.timestamp_iso || item?.timestamp || ""),
+      String(item?.session_id || ""),
+      String(item?.request_id || ""),
+      String(item?.input_text || "").slice(0, 120),
+    ].join("|");
+    const key = id || fallbackKey;
+
+    if (!key || seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    unique.push(item);
+  });
+
+  return unique;
+}
+
+function toLocalDayKey(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function shouldRenderActivityLabel(index, totalDays) {
+  if (totalDays <= 7) {
+    return true;
+  }
+  if (totalDays <= 14) {
+    return index % 2 === 0 || index === totalDays - 1;
+  }
+  if (totalDays <= 30) {
+    return index % 5 === 0 || index === totalDays - 1;
+  }
+  return index % 7 === 0 || index === totalDays - 1;
+}
+
+function formatActivityTick(dateValue, totalDays) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  if (totalDays <= 7) {
+    return date.toLocaleDateString(undefined, { weekday: "short" });
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatActivityDisplayDate(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown date";
+  }
+
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 function formatRate(value) {
   const numeric = Number(value || 0);
@@ -105,17 +195,43 @@ function buildDecisionGradient(decisionMix) {
   return `conic-gradient(${segments.join(", ")})`;
 }
 
-function buildDashboardData(statsPayload, logItems, source) {
+function buildDashboardData(statsPayload, logItems, source, activityWindowDays = 7) {
   const stats = statsPayload && typeof statsPayload === "object" ? statsPayload : {};
   const logs = Array.isArray(logItems) ? logItems : [];
 
   const today = new Date();
   const todayKey = today.toDateString();
-  const weeklyCutoff = new Date(today);
-  weeklyCutoff.setHours(0, 0, 0, 0);
-  weeklyCutoff.setDate(weeklyCutoff.getDate() - 6);
+  const normalizedActivityDays = Math.max(1, Number(activityWindowDays) || 7);
+  const activityCutoff = new Date(today);
+  activityCutoff.setHours(0, 0, 0, 0);
+  activityCutoff.setDate(activityCutoff.getDate() - (normalizedActivityDays - 1));
 
-  const weeklyRiskCounts = Object.fromEntries(WEEKDAY_LABELS.map((label) => [label, 0]));
+  const activityTimeline = [];
+  const activityBuckets = {};
+
+  for (let dayIndex = 0; dayIndex < normalizedActivityDays; dayIndex += 1) {
+    const bucketDate = new Date(activityCutoff);
+    bucketDate.setDate(activityCutoff.getDate() + dayIndex);
+
+    const dayKey = toLocalDayKey(bucketDate);
+    if (!dayKey) {
+      continue;
+    }
+
+    activityTimeline.push({
+      dayKey,
+      date: bucketDate,
+      index: dayIndex,
+    });
+
+    activityBuckets[dayKey] = {
+      count: 0,
+      blocked: 0,
+      redacted: 0,
+      riskyPassed: 0,
+    };
+  }
+
   const riskBucketCounts = {
     Low: 0,
     Medium: 0,
@@ -154,11 +270,19 @@ function buildDashboardData(statsPayload, logItems, source) {
       riskBucketCounts.Low += 1;
     }
 
-    if (timestamp && timestamp >= weeklyCutoff) {
-      const weekday = WEEKDAY_LABELS[(timestamp.getDay() + 6) % 7];
+    if (timestamp && timestamp >= activityCutoff) {
+      const dayKey = toLocalDayKey(timestamp);
+      const dayBucket = activityBuckets[dayKey];
       const riskyEvent = decision !== "Passed" || score > 30;
-      if (riskyEvent) {
-        weeklyRiskCounts[weekday] += 1;
+      if (dayBucket && riskyEvent) {
+        dayBucket.count += 1;
+        if (decision === "Blocked") {
+          dayBucket.blocked += 1;
+        } else if (decision === "Redacted") {
+          dayBucket.redacted += 1;
+        } else {
+          dayBucket.riskyPassed += 1;
+        }
       }
     }
   });
@@ -177,16 +301,38 @@ function buildDashboardData(statsPayload, logItems, source) {
       ?? (totalInteractions > 0 ? ((safePassed / totalInteractions) * 100).toFixed(1) : 0),
   );
 
-  const weeklyCounts = WEEKDAY_LABELS.map((label) => ({
-    label,
-    count: weeklyRiskCounts[label],
-  }));
-  const maxWeeklyCount = Math.max(0, ...weeklyCounts.map((item) => item.count));
+  const activitySeriesBase = activityTimeline.map((entry) => {
+    const bucket = activityBuckets[entry.dayKey] || {
+      count: 0,
+      blocked: 0,
+      redacted: 0,
+      riskyPassed: 0,
+    };
 
-  const activitySeries = weeklyCounts.map((item) => ({
+    return {
+      key: entry.dayKey,
+      index: entry.index,
+      label: formatActivityTick(entry.date, normalizedActivityDays),
+      showLabel: shouldRenderActivityLabel(entry.index, normalizedActivityDays),
+      displayDate: formatActivityDisplayDate(entry.date),
+      count: bucket.count,
+      blocked: bucket.blocked,
+      redacted: bucket.redacted,
+      riskyPassed: bucket.riskyPassed,
+    };
+  });
+
+  const maxActivityCount = Math.max(0, ...activitySeriesBase.map((item) => item.count));
+
+  const activitySeries = activitySeriesBase.map((item) => ({
     ...item,
-    value: maxWeeklyCount > 0 ? Math.max(10, Math.round((item.count / maxWeeklyCount) * 100)) : 8,
+    value:
+      maxActivityCount > 0 && item.count > 0
+        ? Math.max(12, Math.round((item.count / maxActivityCount) * 100))
+        : 0,
   }));
+
+  const activityTotal = activitySeries.reduce((sum, item) => sum + item.count, 0);
 
   const decisionMix = toPercentShares([
     { label: "Passed", color: "var(--success)", count: safePassed },
@@ -212,6 +358,8 @@ function buildDashboardData(statsPayload, logItems, source) {
     },
     totalInteractions,
     activitySeries,
+    activityTotal,
+    activityWindowDays: normalizedActivityDays,
     decisionMix,
     decisionGradient: buildDecisionGradient(decisionMix),
     riskBuckets,
@@ -225,6 +373,8 @@ export default function DashboardHome() {
   const [stats, setStats] = useState(null);
   const [logs, setLogs] = useState([]);
   const [source, setSource] = useState("unknown");
+  const [activityWindowDays, setActivityWindowDays] = useState(7);
+  const [activeThreatDay, setActiveThreatDay] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -233,6 +383,36 @@ export default function DashboardHome() {
 
   useEffect(() => {
     let isMounted = true;
+
+    async function fetchLogsForWindow(targetCount) {
+      const collectedRows = [];
+      let logsSource = "unknown";
+
+      for (let offset = 0; offset < targetCount; offset += LOGS_PAGE_SIZE) {
+        const response = await getLogs({
+          limit: LOGS_PAGE_SIZE,
+          offset,
+        });
+
+        logsSource = String(response?.source || logsSource || "unknown");
+        const pageRows = Array.isArray(response?.items) ? response.items : [];
+
+        if (!pageRows.length) {
+          break;
+        }
+
+        collectedRows.push(...pageRows);
+
+        if (pageRows.length < LOGS_PAGE_SIZE) {
+          break;
+        }
+      }
+
+      return {
+        rows: dedupeLogs(collectedRows),
+        source: logsSource,
+      };
+    }
 
     async function loadDashboard(showSpinner) {
       const requestId = ++latestRequestRef.current;
@@ -243,16 +423,17 @@ export default function DashboardHome() {
       setError("");
 
       try {
+        const targetCount = resolveLogTargetForWindow(activityWindowDays);
         const [statsResponse, logsResponse] = await Promise.all([
           getStats(250),
-          getLogs({ limit: 200, offset: 0 }),
+          fetchLogsForWindow(targetCount),
         ]);
 
         if (!isMounted || requestId !== latestRequestRef.current) {
           return;
         }
 
-        const rows = Array.isArray(logsResponse?.items) ? logsResponse.items : [];
+        const rows = Array.isArray(logsResponse?.rows) ? logsResponse.rows : [];
         const sortedRows = [...rows].sort((a, b) => getTimestampMs(b) - getTimestampMs(a));
 
         setStats(statsResponse || {});
@@ -286,7 +467,7 @@ export default function DashboardHome() {
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [user?.uid]);
+  }, [user?.uid, activityWindowDays]);
 
   useEffect(() => {
     let isMounted = true;
@@ -324,8 +505,44 @@ export default function DashboardHome() {
   }, [user?.uid]);
 
   const dashboard = useMemo(() => {
-    return buildDashboardData(stats, logs, source);
-  }, [stats, logs, source]);
+    return buildDashboardData(stats, logs, source, activityWindowDays);
+  }, [stats, logs, source, activityWindowDays]);
+
+  useEffect(() => {
+    setActiveThreatDay("");
+  }, [activityWindowDays]);
+
+  useEffect(() => {
+    if (!dashboard.activitySeries.length) {
+      if (activeThreatDay) {
+        setActiveThreatDay("");
+      }
+      return;
+    }
+
+    const stillExists = dashboard.activitySeries.some((item) => item.key === activeThreatDay);
+    if (stillExists) {
+      return;
+    }
+
+    const sortedByActivity = [...dashboard.activitySeries].sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return b.index - a.index;
+    });
+
+    setActiveThreatDay(sortedByActivity[0]?.key || "");
+  }, [dashboard.activitySeries, activeThreatDay]);
+
+  const selectedThreatDay = useMemo(() => {
+    if (!dashboard.activitySeries.length) {
+      return null;
+    }
+
+    const selected = dashboard.activitySeries.find((item) => item.key === activeThreatDay);
+    return selected || dashboard.activitySeries[0];
+  }, [dashboard.activitySeries, activeThreatDay]);
 
   const userInfo = useMemo(() => {
     return {
@@ -451,23 +668,69 @@ export default function DashboardHome() {
           }}
         >
           <div className="card" style={{ display: "flex", flexDirection: "column" }}>
-            <h3 className="label-style">THREAT ACTIVITY</h3>
-            <div className="mini-chart">
+            <div className="threat-header-row">
+              <h3 className="label-style" style={{ marginBottom: 0 }}>THREAT ACTIVITY</h3>
+              <div className="threat-window-tabs" role="tablist" aria-label="Threat activity range">
+                {[7, 14, 30].map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    className={`threat-window-tab ${activityWindowDays === days ? "is-active" : ""}`}
+                    aria-pressed={activityWindowDays === days}
+                    onClick={() => {
+                      if (activityWindowDays === days) {
+                        return;
+                      }
+                      setLoading(true);
+                      setActivityWindowDays(days);
+                    }}
+                  >
+                    {days}D
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div
+              className="mini-chart"
+              style={{
+                gridTemplateColumns: `repeat(${Math.max(1, dashboard.activitySeries.length)}, minmax(0, 1fr))`,
+              }}
+            >
               {dashboard.activitySeries.map((item) => (
-                <div key={item.label} className="mini-chart__col">
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`mini-chart__col mini-chart__col--interactive ${activeThreatDay === item.key ? "is-active" : ""}`}
+                  title={`${item.displayDate}: ${item.count} risk events`}
+                  onClick={() => setActiveThreatDay(item.key)}
+                  aria-label={`${item.displayDate}: ${item.count} risk events`}
+                  aria-pressed={activeThreatDay === item.key}
+                >
                   <div
                     className="mini-chart__bar"
-                    title={`${item.label}: ${item.count} risk events`}
                     style={{
                       height: `${item.value}%`,
-                      opacity: item.count > 0 ? 1 : 0.35,
+                      opacity: item.count > 0 ? 1 : 0.18,
                     }}
                   ></div>
-                  <span className="mini-chart__label">{item.label}</span>
-                </div>
+                  <span className="mini-chart__label">{item.showLabel ? item.label : ""}</span>
+                  <span className="mini-chart__count">{item.count}</span>
+                </button>
               ))}
             </div>
-            <p className="chart-subtext">Weekly risk events across this account's protected apps.</p>
+            {selectedThreatDay ? (
+              <div className="threat-insight" role="status" aria-live="polite">
+                <strong>{selectedThreatDay.displayDate}:</strong> {selectedThreatDay.count} risk events
+                <span>
+                  Blocked {selectedThreatDay.blocked} · Redacted {selectedThreatDay.redacted} · High-risk passed {selectedThreatDay.riskyPassed}
+                </span>
+              </div>
+            ) : null}
+            <p className="chart-subtext">
+              {dashboard.activityTotal > 0
+                ? `${dashboard.activityTotal} risk events in the last ${dashboard.activityWindowDays} days across this account's protected apps.`
+                : `No risk events detected in the last ${dashboard.activityWindowDays} days across this account's protected apps.`}
+            </p>
           </div>
           <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <h3 className="label-style">DECISION MIX</h3>
@@ -554,28 +817,105 @@ export default function DashboardHome() {
         }
         .mini-chart {
           display: grid;
-          grid-template-columns: repeat(7, 1fr);
           gap: 0.5rem;
           align-items: end;
           height: 160px;
           margin-top: 0.5rem;
+          overflow-x: auto;
+          padding-bottom: 0.2rem;
+        }
+        .threat-header-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 0.75rem;
+        }
+        .threat-window-tabs {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          background: rgba(93, 64, 55, 0.07);
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          padding: 0.15rem;
+          position: relative;
+          z-index: 2;
+        }
+        .threat-window-tab {
+          border: none;
+          background: transparent;
+          color: var(--brown-mid);
+          font-size: 0.68rem;
+          font-weight: 600;
+          letter-spacing: 0.04em;
+          border-radius: 999px;
+          padding: 0.25rem 0.55rem;
+          cursor: pointer;
+          pointer-events: auto;
+        }
+        .threat-window-tab.is-active {
+          background: var(--gold-bg);
+          color: var(--brown-dark);
+        }
+        .threat-window-tab:focus-visible {
+          outline: 2px solid rgba(217, 164, 65, 0.8);
+          outline-offset: 1px;
         }
         .mini-chart__col {
           display: flex;
           flex-direction: column;
           align-items: center;
+          justify-content: flex-end;
+          height: 100%;
           gap: 0.35rem;
+        }
+        .mini-chart__col--interactive {
+          border: none;
+          background: transparent;
+          padding: 0.2rem;
+          border-radius: 10px;
+          cursor: pointer;
+          transition: background-color 0.2s ease, transform 0.2s ease;
+        }
+        .mini-chart__col--interactive:hover {
+          background: rgba(93, 64, 55, 0.08);
+        }
+        .mini-chart__col--interactive.is-active {
+          background: rgba(217, 164, 65, 0.15);
+          box-shadow: inset 0 0 0 1px rgba(217, 164, 65, 0.45);
         }
         .mini-chart__bar {
           width: 100%;
           background: linear-gradient(180deg, rgba(217, 164, 65, 0.9), rgba(217, 164, 65, 0.35));
           border-radius: 10px;
-          min-height: 8px;
+          min-width: 8px;
+          min-height: 0;
           transition: height 0.25s ease;
         }
         .mini-chart__label {
           font-size: 0.7rem;
           color: var(--brown-light);
+          min-height: 0.75rem;
+          line-height: 1;
+        }
+        .mini-chart__count {
+          font-size: 0.68rem;
+          color: var(--brown-mid);
+          line-height: 1;
+          min-height: 0.68rem;
+        }
+        .threat-insight {
+          margin-top: 0.75rem;
+          background: rgba(217, 164, 65, 0.12);
+          border: 1px solid rgba(217, 164, 65, 0.35);
+          border-radius: 10px;
+          padding: 0.45rem 0.6rem;
+          font-size: 0.78rem;
+          color: var(--brown-mid);
+          display: flex;
+          justify-content: space-between;
+          gap: 0.75rem;
+          flex-wrap: wrap;
         }
         .chart-subtext {
           margin-top: 0.75rem;
