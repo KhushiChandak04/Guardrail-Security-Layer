@@ -135,9 +135,9 @@ export default function LandingPage() {
           height: 200%;
           background: radial-gradient(
             ellipse at top,
-            rgba(255, 226, 168, 0.8) 0%,
-            rgba(255, 226, 168, 0.35) 42%,
-            rgba(255, 226, 168, 0) 70%
+            rgba(60, 40, 20, 0.55) 0%,
+            rgba(60, 40, 20, 0.28) 45%,
+            rgba(60, 40, 20, 0) 72%
           );
           filter: blur(6px);
           z-index: -1;

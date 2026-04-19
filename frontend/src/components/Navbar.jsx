@@ -51,12 +51,6 @@ export default function Navbar() {
         <Link to="/solutions" className="nav-link">
           Our Solutions
         </Link>
-        <Link to="/secure-chat" className="nav-link">
-          Demo
-        </Link>
-        <Link to="/#about" className="nav-link">
-          About
-        </Link>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
         <Link to="/login" className="btn btn-cta">
