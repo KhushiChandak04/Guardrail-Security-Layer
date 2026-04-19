@@ -6,6 +6,7 @@ from huggingface_hub import snapshot_download
 MODEL_TARGETS = {
     "sentence-transformers/all-MiniLM-L6-v2": "all-MiniLM-L6-v2",
     "protectai/deberta-v3-base-prompt-injection": "deberta-v3-base-prompt-injection",
+    "xTRam1/safe-guard-classifier": "safe-guard-classifier",
     "unitary/toxic-bert": "toxic-bert",
 }
 

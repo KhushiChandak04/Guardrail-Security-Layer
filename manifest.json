@@ -9,7 +9,7 @@
     "http://localhost:8000/*"
   ],
   "background": {
-    "service_worker": "src/background.js"
+    "service_worker": "extension/src/background.js"
   },
   "content_scripts": [
     {
@@ -18,10 +18,10 @@
         "https://gemini.google.com/*",
         "https://claude.ai/*"
       ],
-      "js": ["src/content.js"]
+      "js": ["extension/src/content.js"]
     }
   ],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "extension/popup.html"
   }
 }

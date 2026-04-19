@@ -1,5 +1,8 @@
 const CONFIG = {
-  apiUrl: "http://localhost:8000/api/v1/validate", // replace with deployed URL later
+  apiUrls: [
+    "http://127.0.0.1:8000/api/chat",
+    "http://localhost:8000/api/chat",
+  ],
 }
 
 const promptInput = document.getElementById("promptInput")
@@ -21,6 +24,50 @@ const STATUS_CLASSES = [
 ]
 
 let sanitizedPrompt = ""
+
+const requestGuardrailDecision = async (prompt) => {
+  const payload = {
+    prompt,
+    metadata: {
+      source: "chrome_extension_popup",
+      prompt_length: String(prompt.length),
+      client_timestamp: new Date().toISOString(),
+    },
+  }
+
+  let lastError = null
+
+  for (const apiUrl of CONFIG.apiUrls) {
+    try {
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        let message = "Validation request failed."
+        try {
+          const errorPayload = await response.json()
+          if (errorPayload?.detail) {
+            message = String(errorPayload.detail)
+          }
+        } catch {
+          // Ignore parse failures and use default message.
+        }
+        throw new Error(message)
+      }
+
+      return await response.json()
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError || new Error("Unable to reach backend API.")
+}
 
 const setHidden = (element, hidden) => {
   if (!element) return
@@ -64,9 +111,9 @@ const showSafe = () => {
   setHidden(injectBtn, false)
 }
 
-const showFlagged = (sanitized) => {
-  sanitizedPrompt = sanitized || promptInput.value
-  if (sanitizedText) sanitizedText.textContent = sanitizedPrompt
+const showFlagged = (detailsText) => {
+  sanitizedPrompt = promptInput.value
+  if (sanitizedText) sanitizedText.textContent = detailsText || sanitizedPrompt
   setStatusBadge("FLAGGED", "status-flagged")
   setHidden(resultHint, true)
   setHidden(safeDetail, true)
@@ -108,27 +155,37 @@ const validatePrompt = async () => {
 
   try {
     setLoading(true)
-    const response = await fetch(CONFIG.apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ prompt }),
-    })
+    const data = await requestGuardrailDecision(prompt)
+    const isBlocked = Boolean(data?.blocked)
+    const redactions = Array.isArray(data?.redactions) ? data.redactions : []
+    const ingressRisk = String(data?.ingress_risk || "low").toLowerCase()
+    const outputRisk = String(data?.output_risk || "low").toLowerCase()
+    const elevatedRisk = ingressRisk !== "low" || outputRisk !== "low"
 
-    if (!response.ok) {
-      showError("Validation request failed. Please try again.")
+    if (isBlocked) {
+      showBlocked(data?.message || "Prompt blocked by policy.")
       return
     }
 
-    const data = await response.json()
+    if (redactions.length > 0 || elevatedRisk) {
+      const detailLines = [
+        `Ingress risk: ${ingressRisk.toUpperCase()}`,
+        `Output risk: ${outputRisk.toUpperCase()}`,
+      ]
 
-    if (data.status === "safe") {
+      if (redactions.length > 0) {
+        detailLines.push(`Redactions: ${redactions.join(", ")}`)
+      }
+
+      detailLines.push("Prompt ready for injection:")
+      detailLines.push(prompt)
+
+      showFlagged(detailLines.join("\n"))
+      return
+    }
+
+    if (data && typeof data === "object") {
       showSafe()
-    } else if (data.status === "flagged") {
-      showFlagged(data.sanitized_prompt)
-    } else if (data.status === "blocked") {
-      showBlocked(data.reason)
     } else {
       showError("Unexpected response from the validator.")
     }

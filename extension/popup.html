@@ -5,8 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Guardrail</title>
     <style>
+      @import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
       :root {
-        color-scheme: dark;
+        --bg-0: #fff6e8;
+        --bg-1: #f4e4cd;
+        --surface: #fffdf8;
+        --brown-dark: #3b2a1e;
+        --brown-mid: #6b4a35;
+        --brown-light: #8c6a50;
+        --gold: #d9a441;
+        --gold-dark: #b58322;
+        --border: #ead7c4;
+        --overlay: rgba(217, 164, 65, 0.12);
+        --success: #3a7a4a;
+        --warning: #c78a1d;
+        --danger: #b23b2f;
+        --success-bg: #e7f5ea;
+        --warning-bg: #fff4dc;
+        --danger-bg: #fde7e3;
+        --success-text: #2b5f38;
+        --warning-text: #8a5b0f;
+        --danger-text: #8f2a22;
+        --shadow: 0 18px 40px rgba(77, 56, 36, 0.18);
+        --page-bg:
+          radial-gradient(circle at 12% 8%, #fff4c7 0, transparent 36%),
+          radial-gradient(circle at 88% 16%, #f5e2c3 0, transparent 34%),
+          linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 100%);
       }
 
       * {
@@ -15,40 +40,77 @@
 
       body {
         margin: 0;
-        width: 360px;
-        min-height: 480px;
-        background: #111318;
-        color: #e6e9ef;
-        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        width: 380px;
+        min-height: 510px;
+        background: var(--page-bg);
+        color: var(--brown-dark);
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
       }
 
       .popup {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 0.85rem;
         padding: 16px;
       }
 
       .header {
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        padding: 0.85rem 0.9rem;
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 0.3rem;
+      }
+
+      .brand-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+      }
+
+      .brand-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.7);
+        display: grid;
+        place-items: center;
       }
 
       .brand {
         font-size: 18px;
         font-weight: 700;
         letter-spacing: 0.2px;
+        font-family: "Playfair Display", serif;
+        color: var(--brown-dark);
       }
 
       .subtitle {
-        font-size: 12px;
-        color: #aab3c0;
+        font-size: 0.72rem;
+        color: var(--brown-light);
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+
+      .live-badge {
+        align-self: flex-start;
+        margin-top: 0.25rem;
+        font-size: 0.68rem;
+        background: var(--success-bg);
+        color: var(--success-text);
+        border: 1px solid var(--success);
+        border-radius: 999px;
+        padding: 0.2rem 0.5rem;
+        font-weight: 600;
       }
 
       .label {
-        font-size: 12px;
-        color: #aab3c0;
+        font-size: 0.7rem;
+        color: var(--brown-light);
         text-transform: uppercase;
         letter-spacing: 0.08em;
       }
@@ -57,46 +119,67 @@
         width: 100%;
         min-height: 120px;
         resize: vertical;
-        padding: 10px;
+        padding: 0.7rem 0.75rem;
         border-radius: 10px;
-        border: 1px solid #2b2f3a;
-        background: #171a20;
-        color: #eef0f6;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--brown-dark);
         font-size: 13px;
         line-height: 1.4;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+      }
+
+      textarea:focus {
+        outline: 2px solid rgba(217, 164, 65, 0.28);
+        border-color: var(--gold);
       }
 
       textarea::placeholder {
-        color: #7d8796;
+        color: var(--brown-light);
       }
 
       .btn {
         width: 100%;
-        padding: 10px 12px;
-        border-radius: 10px;
+        padding: 0.6rem 0.8rem;
+        border-radius: 999px;
         border: 1px solid transparent;
         font-size: 13px;
         font-weight: 600;
         cursor: pointer;
+        transition:
+          transform 0.15s ease,
+          box-shadow 0.15s ease,
+          background 0.15s ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+      }
+
+      .btn:disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+        transform: none;
       }
 
       .btn.primary {
-        background: #2d6cdf;
-        color: #f4f7ff;
+        background: linear-gradient(135deg, #f3c96b 0%, #d9a441 100%);
+        color: var(--brown-dark);
+        box-shadow: 0 8px 18px rgba(92, 62, 30, 0.16);
       }
 
       .btn.primary:hover {
-        background: #346fe6;
+        background: linear-gradient(135deg, #f5cf7b 0%, #deab4f 100%);
       }
 
       .btn.secondary {
-        background: #1c2230;
-        color: #d8dfea;
-        border-color: #2b3242;
+        border-color: var(--gold);
+        color: var(--brown-dark);
+        background: transparent;
       }
 
       .btn.secondary:hover {
-        background: #232a3b;
+        background: var(--overlay);
       }
 
       .hidden {
@@ -105,8 +188,9 @@
 
       .result {
         border-radius: 12px;
-        border: 1px solid #2a2f3a;
-        background: #151821;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        box-shadow: var(--shadow);
         padding: 12px;
         display: flex;
         flex-direction: column;
@@ -122,7 +206,7 @@
 
       .status-label {
         font-size: 12px;
-        color: #aab3c0;
+        color: var(--brown-light);
       }
 
       .status-badge {
@@ -136,54 +220,76 @@
       }
 
       .status-idle {
-        background: #1f232b;
-        color: #a7b0bf;
-        border-color: #2c323d;
+        background: var(--overlay);
+        color: var(--brown-mid);
+        border-color: var(--border);
       }
 
       .status-safe {
-        background: #143324;
-        color: #9fe7bd;
-        border-color: #2a7a55;
+        background: var(--success-bg);
+        color: var(--success-text);
+        border-color: var(--success);
       }
 
       .status-flagged {
-        background: #3a2f10;
-        color: #f7d67d;
-        border-color: #a9862f;
+        background: var(--warning-bg);
+        color: var(--warning-text);
+        border-color: var(--warning);
       }
 
       .status-blocked {
-        background: #3b1616;
-        color: #f7a3a3;
-        border-color: #a63c3c;
+        background: var(--danger-bg);
+        color: var(--danger-text);
+        border-color: var(--danger);
       }
 
       .result-detail {
         font-size: 12px;
-        color: #c9d1dc;
+        color: var(--brown-mid);
         line-height: 1.4;
       }
 
       .detail-title {
         font-weight: 600;
         margin-bottom: 6px;
+        letter-spacing: 0.03em;
       }
 
       .detail-text {
-        background: #1a1f29;
+        background: #fff8ef;
         border-radius: 8px;
         padding: 8px;
-        border: 1px solid #2a2f3a;
+        border: 1px solid var(--border);
         white-space: pre-wrap;
+        color: var(--brown-dark);
       }
     </style>
   </head>
   <body>
     <main class="popup">
       <header class="header">
-        <div class="brand">Guardrail</div>
+        <div class="brand-row">
+          <span class="brand-icon" aria-hidden="true">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 2L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 2Z"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+          <div class="brand">Underdog Guardrail</div>
+        </div>
         <div class="subtitle">Prompt Safety</div>
+        <div class="live-badge">Live · Monitoring</div>
       </header>
 
       <label class="label" for="promptInput">Prompt</label>
@@ -211,7 +317,7 @@
           <div class="detail-text">No issues detected.</div>
         </div>
         <div class="result-detail hidden" id="flaggedDetail">
-          <div class="detail-title">FLAGGED - Sanitized Version</div>
+          <div class="detail-title">FLAGGED - Guardrail Details</div>
           <div class="detail-text" id="sanitizedText"></div>
         </div>
         <div class="result-detail hidden" id="blockedDetail">
