@@ -11,6 +11,7 @@ class ChatResponse(BaseModel):
     output_risk: Literal["low", "medium", "high"]
     redactions: list[str] = Field(default_factory=list)
     timestamp: str
+    rephrased_prompt: str | None = None
 
 
 class DocumentScanResponse(BaseModel):

@@ -85,6 +85,7 @@
 #             sanitized_prompt=sanitized_prompt
 #         )
 import asyncio
+import re
 from dataclasses import dataclass
 
 from app.config.settings import settings
@@ -110,6 +111,65 @@ class DocumentVerdict:
     risk_level: str
     sanitized_text: str
 
+
+# Catch direct harmful-instruction requests that can be missed by toxicity classifiers.
+HARMFUL_INSTRUCTION_PATTERNS = [
+    re.compile(
+        r"\b(how\s+to|steps?\s+to|guide\s+to|instructions?\s+to|recipe\s+for)\b.{0,80}\b(make|build|create|assemble|prepare|synthesize|construct)\b.{0,80}\b(bomb|explosive|ied|molotov|pipe\s*bomb|poison|weapon|napalm|malware|phishing)\b"
+    ),
+    re.compile(r"\b(make|build|create|assemble|prepare|synthesize|construct)\b.{0,40}\b(bomb|explosive|ied|molotov|pipe\s*bomb|poison|weapon|napalm|malware|phishing)\b"),
+]
+
+INSTRUCTION_HINT_TERMS = (
+    "how to",
+    "steps",
+    "guide",
+    "instructions",
+    "recipe",
+)
+
+ACTION_HINT_TERMS = (
+    "make",
+    "build",
+    "create",
+    "assemble",
+    "prepare",
+    "synthesize",
+    "construct",
+)
+
+DANGEROUS_HINT_TERMS = (
+    "bomb",
+    "explosive",
+    "ied",
+    "molotov",
+    "pipe bomb",
+    "poison",
+    "weapon",
+    "napalm",
+    "malware",
+    "phishing",
+)
+
+
+def _dedupe_reasons(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    for value in values:
+        clean = str(value or "").strip()
+        if not clean:
+            continue
+
+        key = clean.lower()
+        if key in seen:
+            continue
+
+        seen.add(key)
+        ordered.append(clean)
+
+    return ordered
+
 class GuardrailEngine:
     def __init__(self, vector_service: VectorService):
         self.vector_service = vector_service
@@ -134,6 +194,54 @@ class GuardrailEngine:
             return distance, f"Matched vector: {match.pattern[:30]}..."
             
         return 1.0, None  # Default safe distance if nothing is found
+
+    def _detect_harmful_instruction(self, normalized_data: dict) -> tuple[int, str | None]:
+        normalized = str(normalized_data.get("normalized", ""))
+        compact = str(normalized_data.get("compact", ""))
+
+        for pattern in HARMFUL_INSTRUCTION_PATTERNS:
+            if pattern.search(normalized):
+                return 95, "Prompt blocked"
+
+        has_instruction_hint = any(term in normalized for term in INSTRUCTION_HINT_TERMS)
+        has_action_hint = any(term in normalized for term in ACTION_HINT_TERMS)
+        has_dangerous_hint = any(term in normalized for term in DANGEROUS_HINT_TERMS)
+
+        # Compact fallback catches minor obfuscation like "howtomakeabomb".
+        compact_bomb_request = "howtomakeabomb" in compact or "makabomb" in compact
+
+        if (has_dangerous_hint and (has_instruction_hint or has_action_hint)) or compact_bomb_request:
+            return 90, "Prompt blocked"
+
+        return 0, None
+
+    def _resolve_block_reason(
+        self,
+        *,
+        heuristics: dict,
+        ml_reason: str | None,
+        vector_risk: float,
+        harmful_risk: int,
+    ) -> str:
+        heuristic_reasons = [str(reason).lower() for reason in heuristics.get("reasons", [])]
+        ml_reason_lower = str(ml_reason or "").lower()
+
+        if any("jailbreak" in reason for reason in heuristic_reasons) or vector_risk >= self.risk_block_threshold:
+            return "Jailbreak detected"
+
+        if harmful_risk >= self.risk_block_threshold:
+            return "Prompt blocked"
+
+        if "toxic" in ml_reason_lower or "harmful" in ml_reason_lower:
+            return "Prompt blocked"
+
+        if heuristics.get("risk", 0) >= self.risk_block_threshold:
+            return "Prompt Injection detected"
+
+        if "prompt injection" in ml_reason_lower:
+            return "Prompt Injection detected"
+
+        return "Prompt blocked"
     
     async def validate_input(self, prompt: str) -> InputVerdict:
         normalized_data = normalize_text(prompt)
@@ -142,27 +250,32 @@ class GuardrailEngine:
         # 1. Instant Regex Checks (Zero latency, run synchronously first)
         sys_ext = detect_system_extraction(normalized_data)
         if sys_ext["triggered"]:
-            return InputVerdict(True, "System prompt extraction attempt", "high", "")
+            return InputVerdict(True, "Prompt Injection detected", "high", "")
             
         heuristics = detect_heuristic_injection(normalized_data)
+        harmful_risk, harmful_reason = self._detect_harmful_instruction(normalized_data)
         
         # 2. Parallel Heavy Checks (Run ML Ensemble and ChromaDB at the same time)
         ml_task = self.ml_ensemble.score_concurrently(prompt)
         vector_task = self.check_vector_async(prompt)
         
-        (ml_score, ml_reason), (vector_distance, vector_error) = await asyncio.gather(ml_task, vector_task)
+        (ml_score, ml_reason), (vector_distance, _vector_error) = await asyncio.gather(ml_task, vector_task)
 
         # Vector risk calculation
         vector_risk = 0
-        if vector_distance and vector_distance < 0.45:
+        if vector_distance is not None and vector_distance < 0.45:
             vector_risk = 80
             reasons.append(f"Vector similarity match ({vector_distance:.2f})")
 
         # Combine all risks
-        risk_score = max(heuristics["risk"], ml_score, vector_risk)
+        risk_score = max(heuristics["risk"], ml_score, vector_risk, harmful_risk)
         reasons.extend(heuristics["reasons"])
         if ml_reason and ml_reason != "Safe":
             reasons.append(ml_reason)
+        if harmful_reason:
+            reasons.append(harmful_reason)
+
+        ordered_reasons = _dedupe_reasons(reasons)
 
         # 3. Decision
         action = "allow"
@@ -175,9 +288,21 @@ class GuardrailEngine:
         if action == "sanitize":
             sanitized_prompt, _ = mask_sensitive(prompt, use_presidio=True)
 
+        if action == "block":
+            final_reason = self._resolve_block_reason(
+                heuristics=heuristics,
+                ml_reason=ml_reason,
+                vector_risk=vector_risk,
+                harmful_risk=harmful_risk,
+            )
+        elif ordered_reasons:
+            final_reason = " | ".join(ordered_reasons)
+        else:
+            final_reason = "Safe"
+
         return InputVerdict(
             blocked=(action == "block"),
-            reason=" | ".join(list(set(reasons))) if reasons else "Safe",
+            reason=final_reason,
             risk_level="high" if action == "block" else ("medium" if action == "sanitize" else "low"),
             sanitized_prompt=sanitized_prompt
         )

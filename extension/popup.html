@@ -253,6 +253,16 @@
         color: var(--brown-dark);
       }
 
+      .action-row {
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      .action-row .btn {
+        width: auto;
+        flex: 1;
+      }
+
     </style>
   </head>
   <body>
@@ -313,11 +323,20 @@
           <div class="detail-title">BLOCKED - Reason</div>
           <div class="detail-text" id="blockedReason"></div>
         </div>
+        <div class="result-detail hidden" id="rephraseDetail">
+          <div class="detail-title">REPHRASED OUTPUT - USE THIS INSTEAD</div>
+          <div class="detail-text" id="rephraseText"></div>
+        </div>
       </section>
 
-      <button class="btn secondary hidden" id="injectBtn" type="button">
-        Inject into Chat
-      </button>
+      <div class="action-row">
+        <button class="btn secondary hidden" id="injectBtn" type="button">
+          Inject into Chat
+        </button>
+        <button class="btn secondary hidden" id="copyBtn" type="button">
+          Copy Rephrased Output
+        </button>
+      </div>
     </main>
 
     <script src="src/popup.js"></script>

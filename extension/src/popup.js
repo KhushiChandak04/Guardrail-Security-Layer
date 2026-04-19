@@ -18,11 +18,14 @@ const CONFIG = {
 const promptInput = document.getElementById("promptInput")
 const validateBtn = document.getElementById("validateBtn")
 const injectBtn = document.getElementById("injectBtn")
+const copyBtn = document.getElementById("copyBtn")
 const statusBadge = document.getElementById("statusBadge")
 const resultHint = document.getElementById("resultHint")
 const safeDetail = document.getElementById("safeDetail")
 const flaggedDetail = document.getElementById("flaggedDetail")
 const blockedDetail = document.getElementById("blockedDetail")
+const rephraseDetail = document.getElementById("rephraseDetail")
+const rephraseText = document.getElementById("rephraseText")
 const safeText = document.getElementById("safeText")
 const sanitizedText = document.getElementById("sanitizedText")
 const blockedReason = document.getElementById("blockedReason")
@@ -95,11 +98,18 @@ const setStatusBadge = (text, className) => {
   statusBadge.classList.add(className)
 }
 
+const setActionButtons = ({ showInject = false, showCopy = false } = {}) => {
+  setHidden(injectBtn, !showInject)
+  setHidden(copyBtn, !showCopy)
+}
+
 const resetDetails = () => {
   setHidden(safeDetail, true)
   setHidden(flaggedDetail, true)
   setHidden(blockedDetail, true)
+  setHidden(rephraseDetail, true)
   setHidden(resultHint, false)
+  setActionButtons({ showInject: false, showCopy: false })
 
   if (safeText) {
     safeText.textContent = "No issues detected."
@@ -110,11 +120,20 @@ const resetDetails = () => {
   if (blockedReason) {
     blockedReason.textContent = ""
   }
+  if (rephraseText) {
+    rephraseText.textContent = ""
+  }
 }
 
 const setLoading = (isLoading) => {
   if (validateBtn) {
     validateBtn.disabled = isLoading
+  }
+  if (injectBtn) {
+    injectBtn.disabled = isLoading
+  }
+  if (copyBtn) {
+    copyBtn.disabled = isLoading
   }
 
   if (isLoading && resultHint) {
@@ -270,7 +289,7 @@ const requestGuardrailDecision = async (prompt) => {
     prompt,
     session_id: sessionId,
     metadata: buildMetadata({ prompt, authContext }),
-    rephrase: false,
+    rephrase: true,
   }
 
   if (authContext?.idToken) {
@@ -334,7 +353,8 @@ const showSafe = ({ data }) => {
   setHidden(safeDetail, false)
   setHidden(flaggedDetail, true)
   setHidden(blockedDetail, true)
-  setHidden(injectBtn, false)
+  setHidden(rephraseDetail, true)
+  setActionButtons({ showInject: true, showCopy: false })
 
   const ingressRisk = String(data?.ingress_risk || "low").toUpperCase()
   const outputRisk = String(data?.output_risk || "low").toUpperCase()
@@ -376,12 +396,14 @@ const showFlagged = ({ data }) => {
   setHidden(safeDetail, true)
   setHidden(flaggedDetail, false)
   setHidden(blockedDetail, true)
-  setHidden(injectBtn, false)
+  setHidden(rephraseDetail, true)
+  setActionButtons({ showInject: true, showCopy: false })
 
 }
 
 const showBlocked = ({ data }) => {
-  sanitizedPrompt = ""
+  const suggested = String(data?.rephrased_prompt || "").trim()
+  sanitizedPrompt = suggested
 
   if (blockedReason) {
     blockedReason.textContent = String(
@@ -389,12 +411,17 @@ const showBlocked = ({ data }) => {
     )
   }
 
+  if (rephraseText) {
+    rephraseText.textContent = suggested || "No rephrased output available yet."
+  }
+
   setStatusBadge("BLOCKED", "status-blocked")
   setHidden(resultHint, true)
   setHidden(safeDetail, true)
   setHidden(flaggedDetail, true)
   setHidden(blockedDetail, false)
-  setHidden(injectBtn, true)
+  setHidden(rephraseDetail, !suggested)
+  setActionButtons({ showInject: Boolean(suggested), showCopy: Boolean(suggested) })
 
 }
 
@@ -405,7 +432,7 @@ const showError = (message) => {
   }
   setStatusBadge("ERROR", "status-blocked")
   resetDetails()
-  setHidden(injectBtn, true)
+  setActionButtons({ showInject: false, showCopy: false })
 }
 
 const validatePrompt = async () => {
@@ -444,7 +471,7 @@ const validatePrompt = async () => {
 
 const injectPrompt = async () => {
   if (!sanitizedPrompt) {
-    showError("Run validation before injecting.")
+    showError("No safe prompt available to inject.")
     return
   }
 
@@ -473,12 +500,47 @@ const injectPrompt = async () => {
   }
 }
 
+const copyPrompt = async () => {
+  const text = String(sanitizedPrompt || "").trim()
+  if (!text) {
+    showError("No safe prompt available to copy.")
+    return
+  }
+
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const temp = document.createElement("textarea")
+      temp.value = text
+      temp.style.position = "fixed"
+      temp.style.opacity = "0"
+      document.body.appendChild(temp)
+      temp.focus()
+      temp.select()
+      document.execCommand("copy")
+      document.body.removeChild(temp)
+    }
+
+    if (resultHint) {
+      resultHint.textContent = "Rephrased prompt copied to clipboard."
+      setHidden(resultHint, false)
+    }
+  } catch {
+    showError("Unable to copy prompt right now.")
+  }
+}
+
 if (validateBtn) {
   validateBtn.addEventListener("click", validatePrompt)
 }
 
 if (injectBtn) {
   injectBtn.addEventListener("click", injectPrompt)
+}
+
+if (copyBtn) {
+  copyBtn.addEventListener("click", copyPrompt)
 }
 
 resetDetails()

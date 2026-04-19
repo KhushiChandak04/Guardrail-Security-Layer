@@ -10,6 +10,13 @@ import {
   getRuntimeSessionId,
 } from "../services/runtimeStore";
 
+const AGENT_URL_BUILDERS = {
+  "claude-3.5": (encodedPrompt) => `https://claude.ai/new?q=${encodedPrompt}`,
+  gemini: (encodedPrompt) => `https://gemini.google.com/app?q=${encodedPrompt}`,
+  "gemini-1.5": (encodedPrompt) => `https://gemini.google.com/app?q=${encodedPrompt}`,
+  grok: (encodedPrompt) => `https://grok.com/?q=${encodedPrompt}`,
+};
+
 const saveAuditLog = (entry) => {
   appendRuntimeAuditLog(entry);
 };
@@ -30,6 +37,48 @@ function riskLevelToScore(level) {
     return 20;
   }
   return 0;
+}
+
+function buildAgentPromptUrl(agent, prompt) {
+  const normalizedPrompt = String(prompt || "").trim();
+  if (!normalizedPrompt) {
+    return "";
+  }
+
+  const encodedPrompt = encodeURIComponent(normalizedPrompt);
+  const buildUrl = AGENT_URL_BUILDERS[agent] || AGENT_URL_BUILDERS["gemini"];
+  return String(buildUrl(encodedPrompt) || "");
+}
+
+async function copyTextToClipboard(text) {
+  const normalized = String(text || "").trim();
+  if (!normalized || typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(normalized);
+      return true;
+    }
+  } catch {
+    // Fallback below for older browsers or denied clipboard permission.
+  }
+
+  try {
+    const temp = document.createElement("textarea");
+    temp.value = normalized;
+    temp.style.position = "fixed";
+    temp.style.opacity = "0";
+    document.body.appendChild(temp);
+    temp.focus();
+    temp.select();
+    const success = document.execCommand("copy");
+    document.body.removeChild(temp);
+    return Boolean(success);
+  } catch {
+    return false;
+  }
 }
 
 function buildRiskSnapshot(result, sessionId) {
@@ -126,18 +175,44 @@ export default function SecureChat() {
   const [scanNotice, setScanNotice] = useState("");
   const [hasPendingDocumentScan, setHasPendingDocumentScan] = useState(false);
   const agentOptions = [
-    { value: "underdog-guard", label: "Underdog Guard" },
-    { value: "gpt-4o", label: "GPT-4o" },
     { value: "claude-3.5", label: "Claude 3.5" },
     { value: "gemini", label: "Gemini" },
     { value: "gemini-1.5", label: "Gemini 1.5" },
     { value: "grok", label: "Grok" },
-    { value: "llama-3", label: "Llama 3" },
-    { value: "mistral", label: "Mistral" },
   ];
   const [selectedAgent, setSelectedAgent] = useState(agentOptions[0].value);
   const sessionId = useMemo(() => getOrCreateSessionId(), []);
   const fileInputRef = useRef(null);
+
+  const handleCopySuggestion = async (text) => {
+    const copied = await copyTextToClipboard(text);
+    if (!copied) {
+      setError("Unable to copy suggested prompt. Please copy it manually.");
+      return;
+    }
+    setError("");
+  };
+
+  const handleUseSuggestion = (text) => {
+    const normalized = String(text || "").trim();
+    if (!normalized) {
+      return;
+    }
+    setInputText(normalized);
+    setError("");
+  };
+
+  const handleOpenSuggestionInAgent = (agent, text) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const targetUrl = buildAgentPromptUrl(agent, text);
+    if (!targetUrl) {
+      return;
+    }
+    window.open(targetUrl, "_blank", "noopener,noreferrer");
+  };
 
   const handleAttachClick = () => {
     fileInputRef.current?.click();
@@ -210,12 +285,14 @@ export default function SecureChat() {
           user_email: String(user?.email || ""),
           agent: selectedAgent,
         },
+        rephrase: true,
       });
 
       const blocked = Boolean(result?.blocked);
       const redactions = Array.isArray(result?.redactions)
         ? result.redactions
         : [];
+      const rephrasedPrompt = String(result?.rephrased_prompt || "").trim();
 
       if (blocked || redactions.length > 0) {
         setMessages((prev) => [
@@ -235,6 +312,8 @@ export default function SecureChat() {
                   type: "PII",
                   detail: String(field),
                 })),
+            rephrasedPrompt: blocked ? rephrasedPrompt : "",
+            agent: selectedAgent,
           },
         ]);
       }
@@ -391,6 +470,12 @@ export default function SecureChat() {
                     key={msg.id}
                     decision={msg.decision}
                     detectedIssues={msg.detectedIssues}
+                    rephrasedPrompt={msg.rephrasedPrompt}
+                    onCopyRephrase={() => handleCopySuggestion(msg.rephrasedPrompt)}
+                    onUseRephrase={() => handleUseSuggestion(msg.rephrasedPrompt)}
+                    onOpenRephrase={() =>
+                      handleOpenSuggestionInAgent(msg.agent || selectedAgent, msg.rephrasedPrompt)
+                    }
                   />
                 );
               }
@@ -528,7 +613,14 @@ const UserBubble = ({ content }) => (
   </div>
 );
 
-const GuardBubble = ({ decision, detectedIssues }) => (
+const GuardBubble = ({
+  decision,
+  detectedIssues,
+  rephrasedPrompt,
+  onCopyRephrase,
+  onUseRephrase,
+  onOpenRephrase,
+}) => (
   <div
     style={{
       alignSelf: "center",
@@ -556,6 +648,68 @@ const GuardBubble = ({ decision, detectedIssues }) => (
       {detectedIssues.map((issue) => issue.detail || issue.type).join(", ") ||
         "none"}
     </div>
+    {rephrasedPrompt ? (
+      <div
+        style={{
+          marginTop: "0.6rem",
+          borderTop: "1px solid rgba(131, 86, 22, 0.2)",
+          paddingTop: "0.55rem",
+        }}
+      >
+        <div style={{ color: "var(--brown-dark)", fontWeight: 600 }}>
+          Rephrased output (use this instead)
+        </div>
+        <div
+          style={{
+            marginTop: "0.35rem",
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "8px",
+            padding: "0.5rem",
+            fontFamily: "monospace",
+            fontSize: "0.75rem",
+            color: "var(--brown-dark)",
+            whiteSpace: "pre-wrap",
+            lineHeight: 1.35,
+          }}
+        >
+          {rephrasedPrompt}
+        </div>
+        <div
+          style={{
+            marginTop: "0.5rem",
+            display: "flex",
+            gap: "0.4rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn-outline"
+            style={{ fontSize: "0.72rem", padding: "4px 9px" }}
+            onClick={onCopyRephrase}
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline"
+            style={{ fontSize: "0.72rem", padding: "4px 9px" }}
+            onClick={onUseRephrase}
+          >
+            Use in chat
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline"
+            style={{ fontSize: "0.72rem", padding: "4px 9px" }}
+            onClick={onOpenRephrase}
+          >
+            Open in selected agent
+          </button>
+        </div>
+      </div>
+    ) : null}
   </div>
 );
 

@@ -148,12 +148,13 @@ async function request(path, { method = "GET", body, headers = {} } = {}) {
   throw new Error("Unable to reach backend API.");
 }
 
-export async function sendChatPrompt({ prompt, idToken, sessionId, metadata = {} }) {
+export async function sendChatPrompt({ prompt, idToken, sessionId, metadata = {}, rephrase = false }) {
   const resolvedIdToken = idToken || await resolveCurrentIdToken();
   const payload = {
     prompt,
     session_id: sessionId,
     metadata,
+    rephrase: Boolean(rephrase),
   };
 
   if (resolvedIdToken) {

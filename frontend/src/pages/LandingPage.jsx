@@ -7,12 +7,9 @@ import { useAuth } from "../hooks/useAuth.jsx";
 export default function LandingPage() {
   const { isAuthenticated } = useAuth();
   const logoItems = [
-    { name: "ChatGPT", src: "/logos/chatgpt.png" },
     { name: "Gemini", src: "/logos/gemini.png" },
     { name: "Grok", src: "/logos/grok.png" },
     { name: "Claude", src: "/logos/claude.png" },
-    { name: "Mistral", src: "/logos/mistral.png" },
-    { name: "Llama", src: "/logos/llama.png" },
     { name: "Cohere", src: "/logos/cohere.png" },
     { name: "Perplexity", src: "/logos/perplexity.png" },
     { name: "DeepSeek", src: "/logos/deepseek.png" },

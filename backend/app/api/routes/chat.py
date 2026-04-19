@@ -26,6 +26,7 @@ async def process_chat(
     request_source: str,
 ) -> ChatResponse:
     request_id = str(uuid4())
+    raw_prompt = payload.prompt
     user = await auth_service.verify_id_token(payload.id_token)
     user_id = str(user.get("uid", "anonymous") or "anonymous")
     user_email = str(user.get("email", "") or "")
@@ -48,25 +49,27 @@ async def process_chat(
     # # Add the await keyword here since validate_input now runs concurrent async ML tasks
     # input_verdict = await guardrail_engine.validate_input(payload.prompt) 
     interaction_metadata.setdefault("source", request_source)
-    interaction_metadata.setdefault("prompt_length", str(len(payload.prompt)))
+    interaction_metadata.setdefault("prompt_length", str(len(raw_prompt)))
     document_was_provided = bool(payload.document_text and payload.document_text.strip())
     interaction_metadata.setdefault("document_provided", str(document_was_provided).lower())
 
-    # --- NEW PRE-PROCESSOR CODE BEGINS ---
-    # 1. Send raw prompt to Groq for translation and sanitization
-    optimized_data = await llm_service.optimize_and_translate(payload.prompt)
-    
-    # 2. Overwrite the payload prompt with the clean English version
-    payload.prompt = optimized_data.get("rephrased_english_prompt", payload.prompt)
-    
-    # 3. Save the detected language to metadata for your logs
-    interaction_metadata.setdefault("original_language", optimized_data.get("original_language", "Unknown"))
-    # --- NEW PRE-PROCESSOR CODE ENDS ---
+    async def build_safe_rephrase(reason: str) -> str | None:
+        if not payload.rephrase:
+            return None
 
-    # Add the await keyword here since validate_input now runs concurrent async ML tasks
-    input_verdict = await guardrail_engine.validate_input(payload.prompt)
+        suggested = await llm_service.suggest_safe_rephrase(
+            user_text=raw_prompt,
+            block_reason=reason,
+        )
+        normalized = " ".join(str(suggested or "").split())
+        if not normalized:
+            return None
+        return normalized
+
+    # Score the raw prompt first so pre-processing never masks risky intent.
+    input_verdict = await guardrail_engine.validate_input(raw_prompt)
     
-    input_was_sanitized = bool(input_verdict.sanitized_prompt and input_verdict.sanitized_prompt != payload.prompt)
+    input_was_sanitized = bool(input_verdict.sanitized_prompt and input_verdict.sanitized_prompt != raw_prompt)
     interaction_metadata.setdefault("ingress_risk", input_verdict.risk_level)
     interaction_metadata.setdefault("ingress_reason", input_verdict.reason)
     interaction_metadata.setdefault("input_was_sanitized", str(input_was_sanitized).lower())
@@ -79,6 +82,7 @@ async def process_chat(
 
         if document_verdict.blocked:
             interaction_timestamp = now_utc_iso()
+            safe_rephrase = await build_safe_rephrase(document_verdict.reason)
             blocked_response = ChatResponse(
                 request_id=request_id,
                 message=f"Request blocked: {document_verdict.reason}",
@@ -87,13 +91,17 @@ async def process_chat(
                 output_risk="low",
                 redactions=[],
                 timestamp=interaction_timestamp,
+                rephrased_prompt=safe_rephrase,
             )
+
+            interaction_metadata.setdefault("rephrase_requested", str(payload.rephrase).lower())
+            interaction_metadata.setdefault("rephrase_generated", str(bool(safe_rephrase)).lower())
 
             await firebase_service.log_interaction(
                 user_id=user_id,
                 user_email=user_email,
                 session_id=payload.session_id,
-                prompt_text=payload.prompt,
+                prompt_text=raw_prompt,
                 input_sanitized=input_was_sanitized,
                 input_risk_level="high",
                 input_reason=document_verdict.reason,
@@ -113,6 +121,7 @@ async def process_chat(
 
     if input_verdict.blocked:
         interaction_timestamp = now_utc_iso()
+        safe_rephrase = await build_safe_rephrase(input_verdict.reason)
         blocked_response = ChatResponse(
             request_id=request_id,
             message=f"Request blocked: {input_verdict.reason}",
@@ -121,13 +130,17 @@ async def process_chat(
             output_risk="low",
             redactions=[],
             timestamp=interaction_timestamp,
+            rephrased_prompt=safe_rephrase,
         )
+
+        interaction_metadata.setdefault("rephrase_requested", str(payload.rephrase).lower())
+        interaction_metadata.setdefault("rephrase_generated", str(bool(safe_rephrase)).lower())
 
         await firebase_service.log_interaction(
             user_id=user_id,
             user_email=user_email,
             session_id=payload.session_id,
-            prompt_text=payload.prompt,
+            prompt_text=raw_prompt,
             input_sanitized=input_was_sanitized,
             input_risk_level=input_verdict.risk_level,
             input_reason=input_verdict.reason,
@@ -143,9 +156,14 @@ async def process_chat(
         )
         return blocked_response
 
+    optimized_data = await llm_service.optimize_and_translate(input_verdict.sanitized_prompt)
+    optimized_prompt = optimized_data.get("rephrased_english_prompt", input_verdict.sanitized_prompt)
+    interaction_metadata.setdefault("original_language", optimized_data.get("original_language", "Unknown"))
+    interaction_metadata.setdefault("preprocessor_applied", "true")
+
     llm_started_at = perf_counter()
     llm_input = guardrail_engine.build_llm_input(
-        prompt=input_verdict.sanitized_prompt,
+        prompt=optimized_prompt,
         sanitized_document_text=sanitized_document_text,
     )
     llm_output = await llm_service.generate(llm_input)
@@ -168,7 +186,7 @@ async def process_chat(
         user_id=user_id,
         user_email=user_email,
         session_id=payload.session_id,
-        prompt_text=payload.prompt,
+        prompt_text=raw_prompt,
         input_sanitized=input_was_sanitized,
         input_risk_level=input_verdict.risk_level,
         input_reason=input_verdict.reason,
