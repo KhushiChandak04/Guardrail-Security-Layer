@@ -147,11 +147,19 @@ class MLEnsembleDetector:
         risk = result["score"] * 100 if result["label"] != "safe" else 0
         return {"risk": risk, "reason": f"Toxic/Harmful intent ({result['label']})" if risk > 50 else None}
 
+    # async def score_concurrently(self, text: str) -> tuple[float, str | None]:
+    #     """Runs both models in parallel and returns the highest risk."""
+    #     # Use to_thread to prevent heavy ML inference from blocking FastAPI's async event loop
+    #     inj_task = asyncio.to_thread(self._run_injection, text)
+    #     tox_task = asyncio.to_thread(self._run_toxicity, text)
     async def score_concurrently(self, text: str) -> tuple[float, str | None]:
-        """Runs both models in parallel and returns the highest risk."""
-        # Use to_thread to prevent heavy ML inference from blocking FastAPI's async event loop
-        inj_task = asyncio.to_thread(self._run_injection, text)
-        tox_task = asyncio.to_thread(self._run_toxicity, text)
+        # Truncate text to roughly fit within the 512 token limit 
+        # (1500 chars is a safe approximation for English)
+        safe_text = text[:1500] 
+        
+        inj_task = asyncio.to_thread(self._run_injection, safe_text)
+        tox_task = asyncio.to_thread(self._run_toxicity, safe_text)
+        # ... rest of the function stays the same
         
         inj_result, tox_result = await asyncio.gather(inj_task, tox_task)
         
