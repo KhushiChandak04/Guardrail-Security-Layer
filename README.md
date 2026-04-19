@@ -1,86 +1,204 @@
 # Guardrail Security Layer
 
-Bidirectional guardrail middleware for GenAI applications.
+<p align="left">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" />
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" />
+  <img alt="React" src="https://img.shields.io/badge/React-18-20232A?logo=react&logoColor=61DAFB" />
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white" />
+  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white" />
+  <img alt="Firebase" src="https://img.shields.io/badge/Firebase-Auth%20%26%20Firestore-FFCA28?logo=firebase&logoColor=black" />
+  <img alt="Groq" src="https://img.shields.io/badge/Groq-LLM%20Gateway-F55036" />
+  <img alt="Hugging Face" src="https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?logo=huggingface&logoColor=black" />
+  <img alt="Chrome Extension" src="https://img.shields.io/badge/Chrome-Extension%20MV3-4285F4?logo=googlechrome&logoColor=white" />
+  <img alt="ChromaDB" src="https://img.shields.io/badge/ChromaDB-Vector%20Similarity-5B3DF5" />
+</p>
 
-## Hackathon Problem Statement
+Production-grade bidirectional security orchestration layer for GenAI systems, designed to control model risk before and after inference.
 
-GenAI copilots are vulnerable in both traffic directions.
+Guardrail Security Layer is built as a high-assurance middleware plane between user-facing clients and foundation models. It fuses rule-driven detection, vector intelligence, and model-based risk scoring to enforce policy in real time across the full prompt-response lifecycle. The platform is engineered for advanced threat scenarios including jailbreak mutation, prompt injection chains, harmful instruction requests, data leakage, and response-side PII exposure.
 
-1. Ingress (user -> model): prompt injection, jailbreak attempts, abuse instructions.
-2. Egress (model -> user): PII leakage, unsafe responses, hallucinated risky content.
+## 1) Executive Overview
 
-This project places a middleware checkpoint between users and foundation models to inspect, score, and optionally block or redact traffic in both directions.
+Large language model applications fail across two critical attack surfaces:
 
-## Bidirectional Security Flow
+1. Ingress: malicious or manipulative prompts entering the model context.
+2. Egress: unsafe, sensitive, or policy-violating content leaving the model.
 
-1. Client prompt arrives at middleware.
-2. Ingress checks run (regex, toxicity, vector similarity to jailbreak corpus).
-3. Prompt is blocked or forwarded to LLM.
-4. LLM response returns to middleware.
-5. Egress checks run (PII detection/redaction, risk scoring).
-6. Safe response is returned to client.
-7. Incident logs are written for auditing and monitoring.
+Guardrail Security Layer solves this as a dedicated inference security plane with:
 
-## Monorepo Layout
+1. Parallel multi-signal ingress analysis.
+2. Deterministic risk actions (allow, sanitize, block).
+3. Standardized security reason taxonomy.
+4. Output sanitization and exposure controls.
+5. Persistent auditability and policy observability.
 
-```text
-Guardrail-Security-Layer/
-  backend/      # FastAPI guardrail middleware + tests
-  frontend/     # React (Vite) chat UI
-  extension/    # Browser extension scaffold (currently MV3 baseline)
-  sdk/          # Python + JavaScript SDK starters
-  shared/       # Shared schemas/constants
-  docs/         # Architecture, API, setup, demo notes
+## 2) Problem Definition
+
+Modern AI assistants can fail in two directions:
+
+1. Ingress risk (user to model): prompt injection, jailbreak attempts, harmful instruction requests, policy bypass attempts.
+2. Egress risk (model to user): PII leakage, unsafe/generated harmful content, policy-inconsistent outputs.
+
+Most implementations secure only one side. This project secures both directions with explicit policy thresholds, model-backed detection, and auditable telemetry.
+
+## 3) Solution Objectives
+
+1. Enforce request-time guardrails before model generation.
+2. Enforce response-time guardrails before user delivery.
+3. Maintain explainable risk decisions with normalized block reasons.
+4. Operate with local model paths when available and cloud fallback when not.
+5. Persist security events to Firestore with local fallback mode.
+
+## 4) Architecture
+
+```mermaid
+flowchart LR
+  U[User Channels
+Web App and Browser Extension] --> EDGE[Secure Access Layer
+Auth and Session Context]
+  EDGE --> API[Guardrail Orchestrator
+FastAPI Runtime]
+
+  API --> INGRESS[Ingress Security Engine]
+  INGRESS --> RULES[Heuristic and Regex Controls]
+  INGRESS --> VECTOR[Vector Threat Intelligence
+ChromaDB plus Embeddings]
+  INGRESS --> PI[Prompt Injection Classifier]
+  INGRESS --> TX[Toxicity and Harm Classifier]
+
+  INGRESS -->|Block| BLOCK[Security Verdict
+Block plus Rephrase]
+  INGRESS -->|Allow| LLM[LLM Inference Layer
+Groq Gateway]
+
+  LLM --> EGRESS[Egress Security Engine]
+  EGRESS --> PII[PII Detection and Redaction
+Presidio]
+  EGRESS --> ORISK[Output Risk Scoring]
+  EGRESS --> RESP[Policy-Safe Response]
+
+  API --> OBS[(Telemetry and Policy Layer
+Firestore)]
 ```
 
-## Stack Coverage (Current State)
+### Threat-processing sequence
 
-### Part A: Browser Extension (Client UI)
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant G as Guardrail Middleware
+  participant D as Parallel Detectors
+  participant L as LLM Provider
+  participant O as Output Controls
+  participant S as Security Telemetry
 
-- MV3 extension scaffold: implemented.
-- React popup runtime via Plasmo: not yet implemented (currently scaffold scripts only).
-- Tailwind in extension: not yet implemented.
-- Shadow DOM isolation: not yet implemented.
-- Firebase Auth in extension: not yet implemented.
-- WebSocket helper: scaffolded.
+  C->>G: Prompt with session metadata
+  G->>D: Normalize and evaluate ingress in parallel
+  D-->>G: Risk evidence plus reason signals
+  alt Risk exceeds block threshold
+    G-->>C: Blocked verdict with standardized reason label
+    G->>S: Persist interaction and risk context
+  else Risk allowed
+    G->>L: Forward sanitized prompt
+    L-->>G: Model output
+    G->>O: PII scan plus output policy checks
+    O-->>G: Redacted safe output plus output risk
+    G-->>C: Final controlled response
+    G->>S: Persist full bidirectional trace
+  end
+```
 
-### Part B: Frontend App (Single UI)
+### Runtime components
 
-- React + Vite chat UI: implemented.
-- Firebase Auth integration: implemented.
-- Session-aware API submission and metadata logging: implemented.
-- Incident visibility is handled through backend logs and Firestore records.
+| Layer | Responsibility |
+|---|---|
+| Frontend | User chat, auth, and risk display |
+| Extension | Browser-side prompt validation and safe injection workflow |
+| FastAPI middleware | Core ingress/egress orchestration and API surface |
+| Ingress engine | Rules + ML + vector decisions before LLM call |
+| Egress engine | PII masking and output risk evaluation |
+| Storage | Firestore interaction logs and policy state |
 
-### Part C: Middleware (Brain + Security Hub)
+## 5) Guardrail Decision Pipeline
 
-- FastAPI core API + WS route: implemented.
-- ChromaDB + SentenceTransformers ingress similarity checks: implemented.
-- Presidio analyzer-based PII detection: implemented.
-- Groq integration with safe fallback mode: implemented.
-- Firebase Admin token/log pipeline with local fallback: implemented.
+### Ingress controls
 
-## Tech Stack (Target Blueprint)
+1. Text normalization for obfuscation-resistant checks.
+2. Rule checks for system extraction and explicit bypass intent.
+3. ML ensemble scoring in parallel:
+   - Prompt-injection model.
+   - Toxicity model.
+4. Vector similarity against jailbreak seed corpus using ChromaDB embeddings.
+5. Harmful-instruction detector for requests such as weapon or explosive construction.
+6. Unified risk score compared with policy thresholds.
 
-- Extension: Plasmo, React, Tailwind CSS, Shadow DOM, Firebase Auth client, WebSockets
-- Middleware: FastAPI, ChromaDB, SentenceTransformers, Presidio, Groq API, Firebase Admin SDK
+### Egress controls
 
-## Scratch Setup For Team (End-To-End)
+1. Model response scanning for sensitive entities.
+2. Redaction using Presidio anonymization pipeline.
+3. Output risk assignment and redaction reporting.
 
-### 1) Clone + Prerequisites
+### Standardized block reason labels
 
-Required:
+| Label | Typical trigger |
+|---|---|
+| Prompt blocked | Harmful instruction intent or toxic harmful request |
+| Prompt Injection detected | Override/system extraction injection patterns |
+| Jailbreak detected | Jailbreak semantics from heuristic or vector evidence |
 
-- Windows PowerShell
-- Python 3.11+
-- Node.js 20+
-- npm 10+
+## 6) Model and Inference Stack
+
+| Function | Model / Service | Role in pipeline |
+|---|---|---|
+| Embedding intelligence | sentence-transformers/all-MiniLM-L6-v2 | Semantic retrieval for jailbreak-adjacent prompt matching |
+| Primary prompt injection detection | xTRam1/safe-guard-classifier | High-sensitivity ingress classifier for injection patterns |
+| Alternate injection model profile | protectai/deberta-v3-base-prompt-injection | Optional hardened model profile for comparative deployment |
+| Toxicity and harmful intent | unitary/toxic-bert | Harmful language and abuse intent scoring |
+| Generation and controlled rephrase | Groq API with llama-3.1-8b-instant (default) | Core generation path and policy-safe rewrite path |
+
+### Model resolution behavior
+
+The backend resolves each model from local artifacts when the configured local path contains model files. Otherwise it falls back to the configured model name.
+
+### Hugging Face model provisioning
+
+The local model bootstrap script can provision multiple model families for offline-first or low-latency security inference:
+
+1. sentence-transformers/all-MiniLM-L6-v2
+2. xTRam1/safe-guard-classifier
+3. unitary/toxic-bert
+4. protectai/deberta-v3-base-prompt-injection
+
+## 7) Technology Stack
+
+| Domain | Stack |
+|---|---|
+| Backend API | FastAPI, Uvicorn, Pydantic Settings |
+| Security and NLP | Transformers, SentenceTransformers, Presidio, custom regex/heuristics |
+| Vector intelligence | ChromaDB |
+| LLM gateway | Groq |
+| Frontend | React 18, Vite, Axios, Firebase Web SDK |
+| Browser extension | Chrome Extension MV3 baseline |
+| Persistence | Firebase Admin SDK, Firestore |
+| Quality and testing | Pytest, Ruff, secret scanning scripts |
+
+## 8) Quick Start
+
+### Prerequisites
+
+1. Windows PowerShell
+2. Python 3.11+
+3. Node.js 20+
+4. npm 10+
+
+### 8.1 Clone
 
 ```powershell
-git clone <your-repo-url>
+git clone <your-repository-url>
 cd Guardrail-Security-Layer
 ```
 
-### 2) Python Environment + Backend Dependencies
+### 8.2 Python environment
 
 ```powershell
 py -3.11 -m venv .venv
@@ -88,309 +206,132 @@ py -3.11 -m venv .venv
 pip install -r backend\requirements.txt
 ```
 
-Optional (improves Presidio NLP quality):
+Optional Presidio NLP enhancement:
 
 ```powershell
 python -m spacy download en_core_web_lg
 ```
 
-### 3) Node Workspaces Install (Frontend, Extension, SDK JS)
+### 8.3 Install Node workspaces
 
 ```powershell
 npm install
 ```
 
-### 4) Firebase Setup + Environment Files
-
-Project details for this repository:
-
-- App nickname: Guardrail-Security-Layer
-- Firebase project ID: guardrail-security-layer
-- Firebase App ID: 1:428591962866:web:e53578084b4f2258dece6b
-- Hosting site: guardrail-security-layer
-
-4.1 Configure Firebase resources in console:
-
-1. Create Firestore database in Native mode.
-2. Enable Authentication providers:
-  - Google
-  - Email/Password
-3. Create a service account key from Project Settings -> Service accounts -> Generate new private key.
-4. Save the JSON file at backend/credentials/firebase-service-account.json.
-
-4.2 Environment policy used in this repo:
-
-- Runtime env files used:
-  - `backend/.env`
-  - `frontend/.env`
-- All `.env` files and service-account JSON files are gitignored.
-
-Required env files and locations:
-
-- backend/.env
-- frontend/.env
-
-4.3 backend/.env values:
-
-```dotenv
-APP_ENV=development
-APP_HOST=127.0.0.1
-APP_PORT=8000
-ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
-
-GROQ_API_KEY=
-GROQ_MODEL=llama-3.1-8b-instant
-MODELS_LOCAL_ONLY=true
-EMBEDDING_MODEL_NAME=all-MiniLM-L6-v2
-EMBEDDING_MODEL_PATH=./models/all-MiniLM-L6-v2
-PROMPT_INJECTION_MODEL_NAME=protectai/deberta-v3-base-prompt-injection
-PROMPT_INJECTION_MODEL_PATH=./models/deberta-v3-base-prompt-injection
-TOXICITY_MODEL_NAME=unitary/toxic-bert
-TOXICITY_MODEL_PATH=./models/toxic-bert
-
-CHROMA_PATH=./.chroma
-CHROMA_COLLECTION=jailbreak_patterns
-JAILBREAK_SIMILARITY_THRESHOLD=0.79
-JAILBREAK_SEED_FILE=./app/data/jailbreak_seed.txt
-INGRESS_BLOCK_THRESHOLD=70
-INGRESS_SANITIZE_THRESHOLD=40
-
-FIREBASE_PROJECT_ID=guardrail-security-layer
-FIREBASE_CREDENTIALS_PATH=backend/credentials/firebase-service-account.json
-FIRESTORE_INTERACTIONS_COLLECTION=interactions
-FIRESTORE_SESSIONS_COLLECTION=sessions
-FIRESTORE_USERS_COLLECTION=users
-FIRESTORE_POLICIES_COLLECTION=policies
-FIRESTORE_THREAT_PATTERNS_COLLECTION=threat_patterns
-FIRESTORE_ANALYTICS_CACHE_COLLECTION=analytics_cache
-```
-
-4.3.1 Local model setup (repo-first, no runtime HF download):
+### 8.4 Download local model artifacts
 
 ```powershell
 $env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\setup_local_models.py
 ```
 
-This command populates these folders inside the repository:
+This setup downloads model folders under backend/models including:
 
-- backend/models/all-MiniLM-L6-v2
-- backend/models/deberta-v3-base-prompt-injection
-- backend/models/toxic-bert
+1. all-MiniLM-L6-v2
+2. safe-guard-classifier
+3. toxic-bert
+4. deberta-v3-base-prompt-injection
 
-Step 4: Initialize Firebase in backend (already added in codebase)
+### 8.5 Start services (separate terminals)
 
-- File: `backend/firebase_config.py`
-- Includes Admin SDK initialization + helper:
-  - `initialize_firebase()`
-  - `log_interaction(data)`
-
-Step 5: Test connection (temporary write)
-
-Run:
+Terminal 1:
 
 ```powershell
-$env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\test_firebase_connection.py
+npm run dev:backend:stable
 ```
 
-If successful, Firestore gets a `test` collection document with `{"hello": "world"}`.
-
-4.4 Frontend Firebase web config:
-
-- Values from your Firebase web app are loaded from:
-  - frontend/.env (VITE_FIREBASE_*)
-- These are Firebase client config values (public identifiers), not private keys.
-- Do not place service-account JSON or other backend secrets in frontend source.
-- Optional frontend API override (recommended for local consistency):
-
-```dotenv
-VITE_API_BASE_URL=http://127.0.0.1:8000/api
-```
-
-4.5 Optional Firebase CLI setup (only if you deploy hosting from this repo):
-
-```powershell
-npm install -g firebase-tools
-firebase login
-firebase use guardrail-security-layer
-firebase init hosting
-```
-
-4.6 Firestore schema is created by backend code (automatic):
-
-- No manual table/collection creation is required beyond enabling Firestore in Firebase console.
-- No static placeholder interaction rows are written.
-- On backend startup/bootstrap, the middleware seeds policy configuration docs only:
-  - policies/default_policy
-  - threat_patterns/* baseline docs
-- On each `/api/chat` request (UI, SDK, or websocket), it writes live interaction/session/analytics records automatically.
-
-Optional force-bootstrap command (not required for normal runtime):
-
-```powershell
-$env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\bootstrap_firestore_schema.py
-```
-
-4.7 Firestore collections used by backend:
-
-- interactions
-- sessions
-- users
-- policies
-- threat_patterns
-- analytics_cache
-
-Detailed schema reference: docs/firestore_schema.md
-
-Intelligence integration note:
-- Threat pattern documents are synchronized from backend logic files (`regex_rules.py`) and jailbreak seed data (`jailbreak_seed.txt`) during backend schema bootstrap.
-- Guardrail block/sanitize thresholds are read from `backend/.env` and written into `policies/default_policy`.
-
-### 5) Run Services (Current Codebase)
-
-Run from repo root in two separate terminals:
-
-Terminal 1 (backend):
-
-```powershell
-cd backend
-..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
-```
-
-Terminal 2 (frontend):
-
-```powershell
-npm run dev:frontend
-```
-
-Notes:
-
-- Backend accepts localhost frontend origins on any port (for example 5173, 5174, 5175), so Vite port auto-switching should not cause CORS failures.
-- If backend appears to restart repeatedly, ensure you are using the command above with `--reload-dir app` from inside the backend folder.
-- Root scripts now auto-clear occupied dev ports before startup (`8000` for backend, `5173` for frontend) so local URLs stay fixed.
-
-Optional backend shortcut from repo root:
+Optional hot-reload backend mode:
 
 ```powershell
 npm run dev:backend
 ```
 
-Stable backend mode (no auto-reload, fewer connection resets during long browser sessions):
+Terminal 2:
 
 ```powershell
-npm run dev:backend:stable
+npm run dev:frontend
 ```
 
-Extension (current scaffold mode):
+Optional:
 
 ```powershell
 npm run dev:extension
 ```
 
-### 6) Validation Commands
+## 9) Validation and Operations
 
-Backend tests:
+### Core checks
 
 ```powershell
 $env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe -m pytest -q backend/tests
 ```
 
-Route map:
-
 ```powershell
 $env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\print_routes.py
 ```
-
-Frontend production build check:
 
 ```powershell
 npm run build --workspace @guardrail/frontend
 ```
 
-Secret safety check (before push):
+### Security checks
 
 ```powershell
 npm run security:scan
 ```
 
-Optional full-history check:
-
 ```powershell
 npm run security:scan-history
 ```
 
-### 7) Troubleshooting: ERR_CONNECTION_RESET
+## 10) Advanced Security Capabilities
 
-If browser shows `ERR_CONNECTION_RESET` for backend:
+1. Hybrid deterministic plus probabilistic threat scoring.
+2. Multi-model ingress fusion with risk threshold governance.
+3. Vector-assisted jailbreak semantic proximity detection.
+4. Policy-standardized reason labels for downstream SOC analysis.
+5. Optional safe rephrase generation for blocked user flows.
+6. Bidirectional observability with persistent risk telemetry.
+7. Runtime model resolution with local-first execution strategy.
 
-1. Use HTTP only (not HTTPS):
-  - `http://127.0.0.1:8000/`
-  - `http://localhost:8000/`
-2. Do not use `0.0.0.0` in browser URL. It is a bind address, not a client URL.
-3. For maximum stability during demo, run:
+## 11) Firestore Data and Policy Governance
 
-```powershell
-npm run dev:backend:stable
-```
+The middleware writes live interaction telemetry and policy state to Firestore, with local fallback behavior when Firebase is unavailable.
 
-4. Verify listener:
+Primary collections:
 
-```powershell
-Get-NetTCPConnection -LocalPort 8000 -State Listen
-```
+1. interactions
+2. sessions
+3. users
+4. policies
+5. threat_patterns
+6. analytics_cache
 
-Expected behavior:
-- `GET /` returns service JSON with routes
-- `GET /health` returns `{"status":"ok"}`
+Additional schema details are documented in docs/firestore_schema.md.
 
-## Upgrade Commands To Match Full Blueprint Exactly
+## 12) Current Implementation Status
 
-Use this section if your team wants to implement the remaining extension features in this sprint.
+| Area | Status |
+|---|---|
+| FastAPI guardrail middleware | Implemented |
+| Bidirectional ingress and egress checks | Implemented |
+| Local model path resolution | Implemented |
+| Firebase logging and policy sync | Implemented |
+| React frontend security chat | Implemented |
+| Browser extension advanced React/Plasmo runtime | Baseline scaffold |
+| SDK starters | Baseline scaffold |
 
-### A) Extension Upgrade (Plasmo + React + Tailwind + Firebase Auth)
+## 13) Troubleshooting
 
-Option 1 (fresh extension rebuild):
+1. Use http://127.0.0.1:8000 for local backend tests.
+2. If backend port is busy, rerun npm run dev:backend:stable.
+3. If a model does not load locally, verify model artifact files exist in backend/models.
+4. If logs or stats fail with authentication errors, validate the active auth token/session context.
+5. If frontend cannot connect, verify backend terminal is running and frontend points to the expected local API base URL.
 
-```powershell
-npm create plasmo@latest extension -- --template react
-```
+## 14) Security Note
 
-Option 2 (upgrade existing extension workspace):
+Never commit secret files, API keys, or Firebase service-account JSON credentials. Keep environment files local and restricted by .gitignore policies.
 
-```powershell
-npm install --workspace @guardrail/extension react react-dom firebase
-npm install --workspace @guardrail/extension -D plasmo tailwindcss postcss autoprefixer
-```
+## 15) License
 
-Then add scripts in extension workspace:
-
-```json
-{
-  "scripts": {
-    "dev": "plasmo dev",
-    "build": "plasmo build",
-    "package": "plasmo package"
-  }
-}
-```
-
-## API Surface
-
-- GET /
-- GET /health
-- POST /api/chat
-- GET /api/diagnostics/guardrails
-- GET /api/logs
-- WS /api/ws/chat
-
-## 5-Minute Judge Demo Flow
-
-1. Submit safe prompt from frontend and show normal pass-through.
-2. Submit jailbreak-style prompt and show ingress block.
-3. Submit PII-containing prompt and show egress redaction.
-4. Open frontend and display incident log behavior from live interactions.
-5. Show tests + route map as implementation proof.
-
-## Implementation Notes
-
-- Firebase and Groq are both optional in local development; middleware has fallback behavior.
-- Extension still contains scaffold sections by design, so teams can layer enterprise features without breaking the demo baseline.
+License policy can be added here based on project governance requirements.
