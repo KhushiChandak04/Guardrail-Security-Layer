@@ -432,7 +432,7 @@ export default function SecureChat() {
               type="button"
               onClick={handleAttachClick}
               disabled={scanLoading || isLoading}
-              className="btn"
+              className="btn attach-btn"
               style={{
                 height: "44px",
                 minWidth: "72px",
@@ -446,16 +446,10 @@ export default function SecureChat() {
               value={selectedAgent}
               onChange={(event) => setSelectedAgent(event.target.value)}
               aria-label="Select AI agent"
+              className="agent-select"
               style={{
                 height: "44px",
                 minWidth: "180px",
-                border: "1px solid var(--border)",
-                borderRadius: "8px",
-                background: "var(--surface)",
-                color: "var(--brown-dark)",
-                fontFamily: "Inter",
-                fontSize: "0.875rem",
-                padding: "0 12px",
               }}
             >
               {agentOptions.map((agent) => (
