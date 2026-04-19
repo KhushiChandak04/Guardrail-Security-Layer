@@ -73,6 +73,17 @@ class FirebaseService:
             return 25
         return None
 
+    def _normalize_risk_score(self, value: float | int | str | None) -> float | None:
+        if value is None:
+            return None
+
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        return max(0.0, min(100.0, parsed))
+
     def _derive_input_flags(self, reason: str, blocked: bool) -> list[str]:
         lowered = reason.lower()
         flags: list[str] = []
@@ -370,12 +381,14 @@ class FirebaseService:
         prompt_text: str,
         input_sanitized: bool,
         input_risk_level: str,
+        input_risk_score: float | None,
         input_reason: str,
         blocked: bool,
         model: str,
         llm_latency_ms: int | None,
         output_text: str | None,
         output_risk_level: str | None,
+        output_risk_score: float | None,
         redactions: list[str],
         metadata: dict[str, str],
         request_id: str,
@@ -383,10 +396,21 @@ class FirebaseService:
     ) -> None:
         input_flags = self._derive_input_flags(input_reason, blocked)
         output_flags = [] if blocked else self._derive_output_flags(redactions, output_risk_level)
-        input_risk_score = self._risk_score_from_level(input_risk_level)
-        output_risk_score = None if blocked else self._risk_score_from_level(output_risk_level)
-        input_risk_score_value = int(input_risk_score or 0)
-        output_risk_score_value = int(output_risk_score or 0)
+
+        fallback_input_score = self._risk_score_from_level(input_risk_level)
+        fallback_output_score = None if blocked else self._risk_score_from_level(output_risk_level)
+
+        input_risk_score_value = self._normalize_risk_score(input_risk_score)
+        if input_risk_score_value is None:
+            input_risk_score_value = self._normalize_risk_score(fallback_input_score) or 0.0
+
+        if blocked:
+            output_risk_score_value = 0.0
+        else:
+            output_risk_score_value = self._normalize_risk_score(output_risk_score)
+            if output_risk_score_value is None:
+                output_risk_score_value = self._normalize_risk_score(fallback_output_score) or 0.0
+
         resolved_session_id = session_id or f"{user_id}-default"
         is_redacted = bool(redactions)
         interaction_timestamp = self._coerce_timestamp(timestamp)
@@ -464,7 +488,7 @@ class FirebaseService:
 
         await self.ensure_schema_initialized()
 
-        is_high_risk = (input_risk_score or 0) >= 70 or (output_risk_score or 0) >= 70
+        is_high_risk = input_risk_score_value >= 70 or output_risk_score_value >= 70
         db = self.db
 
         def _write() -> None:
@@ -547,12 +571,14 @@ class FirebaseService:
             prompt_text=prompt_preview,
             input_sanitized=False,
             input_risk_level=ingress_risk,
+            input_risk_score=None,
             input_reason=reason,
             blocked=blocked,
             model=model,
             llm_latency_ms=0,
             output_text=response_preview,
             output_risk_level=output_risk,
+            output_risk_score=None,
             redactions=redactions,
             metadata=metadata,
             request_id=request_id,

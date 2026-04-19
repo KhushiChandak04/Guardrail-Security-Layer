@@ -101,6 +101,7 @@ class InputVerdict:
     blocked: bool
     reason: str
     risk_level: str
+    risk_score: float
     sanitized_prompt: str
 
 
@@ -109,6 +110,7 @@ class DocumentVerdict:
     blocked: bool
     reason: str
     risk_level: str
+    risk_score: float
     sanitized_text: str
 
 
@@ -250,7 +252,7 @@ class GuardrailEngine:
         # 1. Instant Regex Checks (Zero latency, run synchronously first)
         sys_ext = detect_system_extraction(normalized_data)
         if sys_ext["triggered"]:
-            return InputVerdict(True, "Prompt Injection detected", "high", "")
+            return InputVerdict(True, "Prompt Injection detected", "high", 95.0, "")
             
         heuristics = detect_heuristic_injection(normalized_data)
         harmful_risk, harmful_reason = self._detect_harmful_instruction(normalized_data)
@@ -269,6 +271,7 @@ class GuardrailEngine:
 
         # Combine all risks
         risk_score = max(heuristics["risk"], ml_score, vector_risk, harmful_risk)
+        risk_score = float(max(0.0, min(100.0, risk_score)))
         reasons.extend(heuristics["reasons"])
         if ml_reason and ml_reason != "Safe":
             reasons.append(ml_reason)
@@ -304,6 +307,7 @@ class GuardrailEngine:
             blocked=(action == "block"),
             reason=final_reason,
             risk_level="high" if action == "block" else ("medium" if action == "sanitize" else "low"),
+            risk_score=risk_score,
             sanitized_prompt=sanitized_prompt
         )
 
@@ -313,11 +317,13 @@ class GuardrailEngine:
         reason = str(scan_result.get("message", "Document scanned."))
         blocked = risk == "HIGH"
         sanitized = sanitize_document_text(document_text or "")
+        risk_score = 90.0 if risk == "HIGH" else (55.0 if risk == "MEDIUM" else 10.0)
 
         return DocumentVerdict(
             blocked=blocked,
             reason=reason,
             risk_level=risk.lower(),
+            risk_score=risk_score,
             sanitized_text=sanitized,
         )
 
@@ -331,14 +337,22 @@ class GuardrailEngine:
             f"{sanitized_document_text}"
         )
 
-    def validate_output(self, text: str) -> tuple[str, list[str], str]:
+    def validate_output(self, text: str) -> tuple[str, list[str], str, float]:
         """
         Scans the LLM output for PII or secrets before sending it to the user.
         """
         # Call the Presidio redaction logic we imported at the top of the file
         sanitized_text, redactions = mask_sensitive(text, use_presidio=True)
         
-        # If we found and redacted PII, elevate the risk score
-        output_risk = "high" if "system_disclosure" in redactions else ("medium" if redactions else "low")
+        # Assign output risk and score based on detected redactions.
+        if "system_disclosure" in redactions:
+            output_risk = "high"
+            output_score = 95.0
+        elif redactions:
+            output_risk = "medium"
+            output_score = min(80.0, 45.0 + (len(redactions) * 7.5))
+        else:
+            output_risk = "low"
+            output_score = 8.0
         
-        return sanitized_text, redactions, output_risk
+        return sanitized_text, redactions, output_risk, output_score

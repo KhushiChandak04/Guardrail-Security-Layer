@@ -16,10 +16,26 @@ function normalizeString(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeAuditRiskValue(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
 function extractRiskScore(item) {
-  const input = Number(item?.input_risk_score || 0);
-  const output = Number(item?.output_risk_score || 0);
-  return Math.max(input, output);
+  const input =
+    item?.metadata?.ingress_score ??
+    item?.input_risk_score ??
+    item?.input_analysis?.risk_score ??
+    0;
+  const output =
+    item?.metadata?.output_score ??
+    item?.output_risk_score ??
+    item?.output_analysis?.risk_score ??
+    0;
+  return normalizeAuditRiskValue(Math.max(Number(input || 0), Number(output || 0)));
 }
 
 function decisionLabel(item) {
@@ -122,7 +138,7 @@ function mapLocalLog(item) {
     email: String(item?.email || ""),
     prompt: String(item?.prompt || item?.input_text || ""),
     outputText: String(item?.output_text || item?.outputText || ""),
-    risk_score: Number.isFinite(numericScore) ? numericScore : 0,
+    risk_score: Number.isFinite(numericScore) ? normalizeAuditRiskValue(numericScore) : 0,
     decision: decisionLabel({ decision: item?.decision, redacted: redactedFields.length > 0 }),
     reason: String(item?.reason || "local"),
     model: String(item?.model || item?.llm?.model || "unknown"),

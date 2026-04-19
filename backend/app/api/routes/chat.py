@@ -71,6 +71,8 @@ async def process_chat(
     
     input_was_sanitized = bool(input_verdict.sanitized_prompt and input_verdict.sanitized_prompt != raw_prompt)
     interaction_metadata.setdefault("ingress_risk", input_verdict.risk_level)
+    interaction_metadata.setdefault("ingress_score", f"{input_verdict.risk_score:.2f}")
+    interaction_metadata.setdefault("output_score", "0.00")
     interaction_metadata.setdefault("ingress_reason", input_verdict.reason)
     interaction_metadata.setdefault("input_was_sanitized", str(input_was_sanitized).lower())
 
@@ -88,7 +90,9 @@ async def process_chat(
                 message=f"Request blocked: {document_verdict.reason}",
                 blocked=True,
                 ingress_risk="high",
+                ingress_score=document_verdict.risk_score,
                 output_risk="low",
+                output_score=0.0,
                 redactions=[],
                 timestamp=interaction_timestamp,
                 rephrased_prompt=safe_rephrase,
@@ -104,12 +108,14 @@ async def process_chat(
                 prompt_text=raw_prompt,
                 input_sanitized=input_was_sanitized,
                 input_risk_level="high",
+                input_risk_score=document_verdict.risk_score,
                 input_reason=document_verdict.reason,
                 blocked=True,
                 model=llm_service.model,
                 llm_latency_ms=0,
                 output_text=None,
                 output_risk_level=None,
+                output_risk_score=0.0,
                 redactions=[],
                 metadata=interaction_metadata,
                 request_id=request_id,
@@ -127,7 +133,9 @@ async def process_chat(
             message=f"Request blocked: {input_verdict.reason}",
             blocked=True,
             ingress_risk=input_verdict.risk_level,
+            ingress_score=input_verdict.risk_score,
             output_risk="low",
+            output_score=0.0,
             redactions=[],
             timestamp=interaction_timestamp,
             rephrased_prompt=safe_rephrase,
@@ -143,12 +151,14 @@ async def process_chat(
             prompt_text=raw_prompt,
             input_sanitized=input_was_sanitized,
             input_risk_level=input_verdict.risk_level,
+            input_risk_score=input_verdict.risk_score,
             input_reason=input_verdict.reason,
             blocked=True,
             model=llm_service.model,
             llm_latency_ms=0,
             output_text=None,
             output_risk_level=None,
+            output_risk_score=0.0,
             redactions=[],
             metadata=interaction_metadata,
             request_id=request_id,
@@ -168,7 +178,8 @@ async def process_chat(
     )
     llm_output = await llm_service.generate(llm_input)
     llm_latency_ms = int((perf_counter() - llm_started_at) * 1000)
-    safe_output, redactions, output_risk = guardrail_engine.validate_output(llm_output)
+    safe_output, redactions, output_risk, output_score = guardrail_engine.validate_output(llm_output)
+    interaction_metadata["output_score"] = f"{output_score:.2f}"
 
     interaction_timestamp = now_utc_iso()
 
@@ -177,7 +188,9 @@ async def process_chat(
         message=safe_output,
         blocked=False,
         ingress_risk=input_verdict.risk_level,
+        ingress_score=input_verdict.risk_score,
         output_risk=output_risk,
+        output_score=output_score,
         redactions=redactions,
         timestamp=interaction_timestamp,
     )
@@ -189,12 +202,14 @@ async def process_chat(
         prompt_text=raw_prompt,
         input_sanitized=input_was_sanitized,
         input_risk_level=input_verdict.risk_level,
+        input_risk_score=input_verdict.risk_score,
         input_reason=input_verdict.reason,
         blocked=False,
         model=llm_service.model,
         llm_latency_ms=llm_latency_ms,
         output_text=safe_output,
         output_risk_level=output_risk,
+        output_risk_score=output_score,
         redactions=redactions,
         metadata=interaction_metadata,
         request_id=request_id,

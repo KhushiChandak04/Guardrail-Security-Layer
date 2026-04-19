@@ -25,7 +25,7 @@ function getOrCreateSessionId() {
   return getRuntimeSessionId();
 }
 
-function riskLevelToScore(level) {
+function fallbackRiskLevelScore(level) {
   const normalized = String(level || "").toLowerCase();
   if (normalized === "high") {
     return 85;
@@ -37,6 +37,26 @@ function riskLevelToScore(level) {
     return 20;
   }
   return 0;
+}
+
+function normalizeRiskScore(score) {
+  const parsed = Number(score);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const rounded = Math.round(parsed);
+  return Math.max(0, Math.min(100, rounded));
+}
+
+function resolveRiskScore(score, level) {
+  const normalizedScore = normalizeRiskScore(score);
+  if (normalizedScore !== null) {
+    return normalizedScore;
+  }
+
+  // Backward compatibility with old API payloads that only return risk levels.
+  return fallbackRiskLevelScore(level);
 }
 
 function buildAgentPromptUrl(agent, prompt) {
@@ -89,12 +109,19 @@ function buildRiskSnapshot(result, sessionId) {
     : redactions.length > 0
       ? "REDACTED"
       : "PASSED";
-  const riskLevel = blocked ? result?.ingress_risk : result?.output_risk;
+  const ingressRisk = String(result?.ingress_risk || "low");
+  const outputRisk = String(result?.output_risk || "low");
+  const ingressScore = resolveRiskScore(result?.ingress_score, ingressRisk);
+  const outputScore = resolveRiskScore(result?.output_score, outputRisk);
+  const activeRiskScore = blocked ? ingressScore : outputScore;
+  const activeConfidence = Number((activeRiskScore / 100).toFixed(2));
 
   return {
     decision,
-    risk_score: riskLevelToScore(riskLevel),
-    risk_level: String(riskLevel || "low"),
+    risk_score: activeRiskScore,
+    ingress_score: ingressScore,
+    output_score: outputScore,
+    risk_level: blocked ? ingressRisk : outputRisk,
     reasons: blocked
       ? [String(result?.message || "Request blocked by guardrails")]
       : redactions.length > 0
@@ -104,14 +131,14 @@ function buildRiskSnapshot(result, sessionId) {
       ? [
           {
             type: "Policy",
-            detail: String(result?.ingress_risk || "high"),
-            confidence: 1,
+            detail: `${ingressRisk} (${ingressScore})`,
+            confidence: activeConfidence,
           },
         ]
       : redactions.map((field) => ({
           type: "PII",
           detail: String(field),
-          confidence: 1,
+          confidence: activeConfidence,
         })),
     sanitized_prompt: blocked
       ? "Blocked before model call"
@@ -122,14 +149,18 @@ function buildRiskSnapshot(result, sessionId) {
     request_id: String(result?.request_id || ""),
     session_id: sessionId,
     timestamp: String(result?.timestamp || new Date().toISOString()),
-    ingress_risk: String(result?.ingress_risk || "low"),
-    output_risk: String(result?.output_risk || "low"),
+    ingress_risk: ingressRisk,
+    output_risk: outputRisk,
   };
 }
 
 function persistAuditLog({ user, prompt, result, sessionId, agent }) {
   const blocked = Boolean(result?.blocked);
   const redactions = Array.isArray(result?.redactions) ? result.redactions : [];
+  const ingressRisk = String(result?.ingress_risk || "low");
+  const outputRisk = String(result?.output_risk || "low");
+  const ingressScore = resolveRiskScore(result?.ingress_score, ingressRisk);
+  const outputScore = resolveRiskScore(result?.output_score, outputRisk);
 
   const decisionLabel = blocked
     ? "Blocked"
@@ -148,11 +179,9 @@ function persistAuditLog({ user, prompt, result, sessionId, agent }) {
     prompt,
     input_text: prompt,
     output_text: String(result?.message || ""),
-    risk_score: blocked
-      ? riskLevelToScore(result?.ingress_risk)
-      : riskLevelToScore(result?.output_risk),
-    input_risk_score: riskLevelToScore(result?.ingress_risk),
-    output_risk_score: riskLevelToScore(result?.output_risk),
+    risk_score: blocked ? ingressScore : outputScore,
+    input_risk_score: ingressScore,
+    output_risk_score: outputScore,
     decision: decisionLabel,
     reason: blocked ? "blocked" : redactions.length > 0 ? "redacted" : "safe",
     redacted_fields: redactions,
@@ -827,7 +856,9 @@ const Inspector = ({ risk }) => {
         <h4 className="label-style">Risk</h4>
         <div className="card" style={{ padding: "0.75rem" }}>
           <div>Ingress: {risk.ingress_risk}</div>
+          <div>Ingress score: {risk.ingress_score}</div>
           <div>Output: {risk.output_risk}</div>
+          <div>Output score: {risk.output_score}</div>
           <div>Session: {risk.session_id}</div>
           <div>Request: {risk.request_id || "n/a"}</div>
         </div>
