@@ -25,11 +25,16 @@ class LLMModelDiagnostics(BaseModel):
 
 class MLModelsDiagnostics(BaseModel):
     local_only: bool
+    ingress_concurrent_checks: int
     llm: LLMModelDiagnostics
     prompt_injection_model: str
     prompt_injection_model_name: str
     prompt_injection_model_path: str
     prompt_injection_model_local: bool
+    secondary_prompt_injection_model: str
+    secondary_prompt_injection_model_name: str
+    secondary_prompt_injection_model_path: str
+    secondary_prompt_injection_model_local: bool
     toxicity_model: str
     toxicity_model_name: str
     toxicity_model_path: str

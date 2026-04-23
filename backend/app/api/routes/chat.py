@@ -1,4 +1,5 @@
 import json
+import re
 from time import perf_counter
 from uuid import uuid4
 
@@ -14,6 +15,39 @@ from app.services.llm_service import LLMService
 from app.utils.helpers import now_utc_iso
 
 router = APIRouter()
+
+
+REFUSAL_START_PATTERNS = (
+    "i cannot",
+    "i can't",
+    "i can’t",
+    "i am unable",
+    "i'm unable",
+    "i’m unable",
+)
+
+SENSITIVE_CONTEXT_TERMS = (
+    "personal",
+    "contact",
+    "patient",
+    "private",
+    "sensitive",
+    "information",
+    "details",
+    "data",
+)
+
+
+def _looks_like_privacy_refusal(text: str) -> bool:
+    normalized = " ".join(str(text or "").lower().split())
+    if not normalized:
+        return False
+
+    starts_with_refusal = any(pattern in normalized for pattern in REFUSAL_START_PATTERNS)
+    has_sensitive_context = any(term in normalized for term in SENSITIVE_CONTEXT_TERMS)
+    has_provide_or_share = bool(re.search(r"\b(provide|share|disclose|give)\b", normalized))
+
+    return starts_with_refusal and has_sensitive_context and has_provide_or_share
 
 
 async def process_chat(
@@ -179,6 +213,18 @@ async def process_chat(
     llm_output = await llm_service.generate(llm_input)
     llm_latency_ms = int((perf_counter() - llm_started_at) * 1000)
     safe_output, redactions, output_risk, output_score = guardrail_engine.validate_output(llm_output)
+
+    # Some providers refuse to transform user-supplied contact details.
+    # When that happens, return a deterministic redacted variant so the interaction is still useful
+    # and is classified as redacted in telemetry/audit logs.
+    prompt_redacted_preview, prompt_redactions, _prompt_risk, _prompt_score = guardrail_engine.validate_output(raw_prompt)
+    if (not redactions) and prompt_redactions and _looks_like_privacy_refusal(safe_output):
+        safe_output = prompt_redacted_preview
+        redactions = prompt_redactions
+        output_risk = "medium"
+        output_score = min(80.0, 45.0 + (len(redactions) * 7.5))
+        interaction_metadata.setdefault("output_generation_mode", "deterministic_redaction")
+
     interaction_metadata["output_score"] = f"{output_score:.2f}"
 
     interaction_timestamp = now_utc_iso()

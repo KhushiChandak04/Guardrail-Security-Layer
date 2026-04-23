@@ -177,6 +177,7 @@ class GuardrailEngine:
         self.vector_service = vector_service
         self.ml_ensemble = MLEnsembleDetector(
             injection_model=settings.prompt_injection_model_ref,
+            secondary_injection_model=settings.secondary_prompt_injection_model_ref,
             toxicity_model=settings.toxicity_model_ref,
             local_files_only=settings.models_local_only,
         )

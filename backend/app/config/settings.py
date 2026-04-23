@@ -46,6 +46,25 @@ def model_path_has_artifacts(path_value: str) -> bool:
     return any((model_path / marker).exists() for marker in marker_files)
 
 
+def resolve_model_reference(*, model_name: str, model_path: str, local_only: bool, model_label: str) -> str:
+    resolved_path = resolve_optional_runtime_path(model_path)
+    if model_path_has_artifacts(resolved_path):
+        return resolved_path
+
+    if local_only:
+        raise ValueError(
+            f"{model_label} local artifacts not found at '{resolved_path}'. "
+            "Disable MODELS_LOCAL_ONLY or provide a valid local model path."
+        )
+
+    normalized_name = str(model_name or "").strip()
+    if not normalized_name:
+        raise ValueError(
+            f"{model_label} model name is empty and no local artifacts were found at '{resolved_path}'."
+        )
+    return normalized_name
+
+
 class Settings(BaseSettings):
     app_name: str = "Guardrail AI Middleware"
     app_env: str = "development"
@@ -62,6 +81,8 @@ class Settings(BaseSettings):
     embedding_model_path: str = "./models/all-MiniLM-L6-v2"
     prompt_injection_model_name: str = "protectai/deberta-v3-base-prompt-injection"
     prompt_injection_model_path: str = "./models/deberta-v3-base-prompt-injection"
+    secondary_prompt_injection_model_name: str = "protectai/deberta-v3-base-prompt-injection"
+    secondary_prompt_injection_model_path: str = "./models/deberta-v3-base-prompt-injection"
     toxicity_model_name: str = "unitary/toxic-bert"
     toxicity_model_path: str = "./models/toxic-bert"
 
@@ -126,26 +147,48 @@ class Settings(BaseSettings):
         return resolve_optional_runtime_path(self.prompt_injection_model_path)
 
     @property
+    def resolved_secondary_prompt_injection_model_path(self) -> str:
+        return resolve_optional_runtime_path(self.secondary_prompt_injection_model_path)
+
+    @property
     def resolved_toxicity_model_path(self) -> str:
         return resolve_optional_runtime_path(self.toxicity_model_path)
 
     @property
     def embedding_model_ref(self) -> str:
-        if model_path_has_artifacts(self.resolved_embedding_model_path):
-            return self.resolved_embedding_model_path
-        return self.embedding_model_name
+        return resolve_model_reference(
+            model_name=self.embedding_model_name,
+            model_path=self.embedding_model_path,
+            local_only=self.models_local_only,
+            model_label="Embedding model",
+        )
 
     @property
     def prompt_injection_model_ref(self) -> str:
-        if model_path_has_artifacts(self.resolved_prompt_injection_model_path):
-            return self.resolved_prompt_injection_model_path
-        return self.prompt_injection_model_name
+        return resolve_model_reference(
+            model_name=self.prompt_injection_model_name,
+            model_path=self.prompt_injection_model_path,
+            local_only=self.models_local_only,
+            model_label="Primary prompt-injection model",
+        )
+
+    @property
+    def secondary_prompt_injection_model_ref(self) -> str:
+        return resolve_model_reference(
+            model_name=self.secondary_prompt_injection_model_name,
+            model_path=self.secondary_prompt_injection_model_path,
+            local_only=self.models_local_only,
+            model_label="Secondary prompt-injection model",
+        )
 
     @property
     def toxicity_model_ref(self) -> str:
-        if model_path_has_artifacts(self.resolved_toxicity_model_path):
-            return self.resolved_toxicity_model_path
-        return self.toxicity_model_name
+        return resolve_model_reference(
+            model_name=self.toxicity_model_name,
+            model_path=self.toxicity_model_path,
+            local_only=self.models_local_only,
+            model_label="Toxicity model",
+        )
 
     @property
     def using_local_embedding_model(self) -> bool:
@@ -154,6 +197,13 @@ class Settings(BaseSettings):
     @property
     def using_local_prompt_injection_model(self) -> bool:
         return self.prompt_injection_model_ref == self.resolved_prompt_injection_model_path and bool(self.resolved_prompt_injection_model_path)
+
+    @property
+    def using_local_secondary_prompt_injection_model(self) -> bool:
+        return (
+            self.secondary_prompt_injection_model_ref == self.resolved_secondary_prompt_injection_model_path
+            and bool(self.resolved_secondary_prompt_injection_model_path)
+        )
 
     @property
     def using_local_toxicity_model(self) -> bool:

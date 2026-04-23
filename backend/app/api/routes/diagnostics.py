@@ -39,6 +39,7 @@ async def guardrail_diagnostics(
         },
         "ml_models": {
             "local_only": settings.models_local_only,
+            "ingress_concurrent_checks": 4,
             "llm": {
                 "provider": "groq",
                 "model": settings.groq_model,
@@ -48,6 +49,10 @@ async def guardrail_diagnostics(
             "prompt_injection_model_name": settings.prompt_injection_model_name,
             "prompt_injection_model_path": settings.resolved_prompt_injection_model_path,
             "prompt_injection_model_local": settings.using_local_prompt_injection_model,
+            "secondary_prompt_injection_model": settings.secondary_prompt_injection_model_ref,
+            "secondary_prompt_injection_model_name": settings.secondary_prompt_injection_model_name,
+            "secondary_prompt_injection_model_path": settings.resolved_secondary_prompt_injection_model_path,
+            "secondary_prompt_injection_model_local": settings.using_local_secondary_prompt_injection_model,
             "toxicity_model": settings.toxicity_model_ref,
             "toxicity_model_name": settings.toxicity_model_name,
             "toxicity_model_path": settings.resolved_toxicity_model_path,

@@ -195,6 +195,23 @@ function buildDecisionGradient(decisionMix) {
   return `conic-gradient(${segments.join(", ")})`;
 }
 
+function getDecisionMixCenter(decisionMix) {
+  const fallback = {
+    label: "No data",
+    value: 0,
+  };
+
+  if (!Array.isArray(decisionMix) || !decisionMix.length) {
+    return fallback;
+  }
+
+  return decisionMix.reduce((best, item) => {
+    const candidateValue = Number(item?.value || 0);
+    const bestValue = Number(best?.value || 0);
+    return candidateValue > bestValue ? item : best;
+  }, fallback);
+}
+
 function buildDashboardData(statsPayload, logItems, source, activityWindowDays = 7) {
   const stats = statsPayload && typeof statsPayload === "object" ? statsPayload : {};
   const logs = Array.isArray(logItems) ? logItems : [];
@@ -339,6 +356,7 @@ function buildDashboardData(statsPayload, logItems, source, activityWindowDays =
     { label: "Redacted", color: "var(--warning)", count: piiRedacted },
     { label: "Blocked", color: "var(--danger)", count: blocked },
   ]);
+  const decisionMixCenter = getDecisionMixCenter(decisionMix);
 
   const riskBuckets = toPercentShares([
     { label: "Low", color: "var(--success)", count: riskBucketCounts.Low },
@@ -364,6 +382,8 @@ function buildDashboardData(statsPayload, logItems, source, activityWindowDays =
     decisionGradient: buildDecisionGradient(decisionMix),
     riskBuckets,
     totalMixCount: blocked + piiRedacted + safePassed,
+    decisionMixCenterValue: Number(decisionMixCenter?.value || 0),
+    decisionMixCenterLabel: String(decisionMixCenter?.label || "No data"),
     source: String(stats.source || source || "unknown"),
   };
 }
@@ -735,7 +755,14 @@ export default function DashboardHome() {
           <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <h3 className="label-style">DECISION MIX</h3>
             <div className="donut" style={{ background: dashboard.decisionGradient }}>
-              <div className="donut-hole">{dashboard.totalMixCount > 0 ? "100%" : "0%"}</div>
+              <div className="donut-hole">
+                <span className="donut-hole-value">
+                  {dashboard.totalMixCount > 0 ? `${dashboard.decisionMixCenterValue}%` : "0%"}
+                </span>
+                <span className="donut-hole-label">
+                  {dashboard.totalMixCount > 0 ? dashboard.decisionMixCenterLabel : "No data"}
+                </span>
+              </div>
             </div>
             <div className="legend">
               {dashboard.decisionMix.map((item) => (
@@ -938,10 +965,21 @@ export default function DashboardHome() {
           background: var(--surface);
           display: grid;
           place-items: center;
-          font-size: 0.85rem;
+          text-align: center;
           color: var(--brown-dark);
           font-weight: 600;
+          line-height: 1.05;
           box-shadow: inset 0 0 0 1px var(--border);
+        }
+        .donut-hole-value {
+          font-size: 0.9rem;
+          color: var(--brown-dark);
+        }
+        .donut-hole-label {
+          font-size: 0.6rem;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--brown-light);
         }
         .legend {
           display: grid;

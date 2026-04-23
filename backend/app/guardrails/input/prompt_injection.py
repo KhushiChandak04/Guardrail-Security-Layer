@@ -36,14 +36,10 @@ class PromptInjectionDetector:
         self.vector_service = vector_service
         self.model_name = model_name
         self.classifier = None
-        self.model_available = True
 
     def _get_classifier(self):
         if self.classifier is not None:
             return self.classifier
-
-        if not self.model_available:
-            return None
 
         try:
             logger.info("Loading prompt injection model: %s", self.model_name)
@@ -54,9 +50,7 @@ class PromptInjectionDetector:
                 max_length=512,
             )
         except Exception as error:
-            self.model_available = False
-            logger.warning("Prompt injection model unavailable; using semantic fallback only. Details: %s", error)
-            return None
+            raise RuntimeError(f"Failed to load required prompt injection model: {self.model_name}") from error
 
         return self.classifier
 
@@ -65,18 +59,14 @@ class PromptInjectionDetector:
         reasons: list[str] = []
 
         classifier = self._get_classifier()
-        if classifier is not None:
-            try:
-                ml_result = classifier(prompt)[0]
-                ml_confidence = float(ml_result["score"])
-                if ml_result["label"].upper() == "INJECTION" and ml_confidence >= 0.98:
-                    ml_score = 0.95
-                    reasons.append(f"ML classifier detected prompt injection (confidence={ml_confidence:.2f})")
-                elif ml_result["label"].upper() == "INJECTION" and ml_confidence >= 0.85:
-                    ml_score = 0.60
-                    reasons.append(f"ML classifier flagged suspicious prompt (confidence={ml_confidence:.2f})")
-            except Exception as error:
-                logger.warning("Prompt injection ML inference failed; continuing with semantic checks. Details: %s", error)
+        ml_result = classifier(prompt)[0]
+        ml_confidence = float(ml_result["score"])
+        if ml_result["label"].upper() == "INJECTION" and ml_confidence >= 0.98:
+            ml_score = 0.95
+            reasons.append(f"ML classifier detected prompt injection (confidence={ml_confidence:.2f})")
+        elif ml_result["label"].upper() == "INJECTION" and ml_confidence >= 0.85:
+            ml_score = 0.60
+            reasons.append(f"ML classifier flagged suspicious prompt (confidence={ml_confidence:.2f})")
 
         vector_match = self.vector_service.query_similar(prompt)
         vector_score = 0.0
