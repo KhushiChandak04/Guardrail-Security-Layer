@@ -156,18 +156,7 @@ sequenceDiagram
 | Toxicity and harmful intent | unitary/toxic-bert | Harmful language and abuse intent scoring |
 | Generation and controlled rephrase | Groq API with llama-3.1-8b-instant (default) | Core generation path and policy-safe rewrite path |
 
-### Model resolution behavior
 
-The backend resolves each model from local artifacts when the configured local path contains model files. Otherwise it falls back to the configured model name.
-
-### Hugging Face model provisioning
-
-The local model bootstrap script can provision multiple model families for offline-first or low-latency security inference:
-
-1. sentence-transformers/all-MiniLM-L6-v2
-2. xTRam1/safe-guard-classifier
-3. unitary/toxic-bert
-4. protectai/deberta-v3-base-prompt-injection
 
 ## 7) Technology Stack
 
@@ -178,18 +167,12 @@ The local model bootstrap script can provision multiple model families for offli
 | Vector intelligence | ChromaDB |
 | LLM gateway | Groq |
 | Frontend | React 18, Vite, Axios, Firebase Web SDK |
-| Browser extension | Chrome Extension MV3 baseline |
+| Browser extension | Chrome Extension MV3 (created and loadable as unpacked extension) |
 | Persistence | Firebase Admin SDK, Firestore |
 | Quality and testing | Pytest, Ruff, secret scanning scripts |
 
 ## 8) Quick Start
 
-### Prerequisites
-
-1. Windows PowerShell
-2. Python 3.11+
-3. Node.js 20+
-4. npm 10+
 
 ### 8.1 Clone
 
@@ -218,20 +201,8 @@ python -m spacy download en_core_web_lg
 npm install
 ```
 
-### 8.4 Download local model artifacts
 
-```powershell
-$env:PYTHONPATH='backend'; .\.venv\Scripts\python.exe backend\scripts\setup_local_models.py
-```
-
-This setup downloads model folders under backend/models including:
-
-1. all-MiniLM-L6-v2
-2. safe-guard-classifier
-3. toxic-bert
-4. deberta-v3-base-prompt-injection
-
-### 8.5 Start services (separate terminals)
+### 8.4 Start services (separate terminals)
 
 Terminal 1:
 
@@ -256,6 +227,7 @@ Optional:
 ```powershell
 npm run dev:extension
 ```
+
 
 ## 9) Validation and Operations
 
@@ -293,45 +265,4 @@ npm run security:scan-history
 6. Bidirectional observability with persistent risk telemetry.
 7. Runtime model resolution with local-first execution strategy.
 
-## 11) Firestore Data and Policy Governance
 
-The middleware writes live interaction telemetry and policy state to Firestore, with local fallback behavior when Firebase is unavailable.
-
-Primary collections:
-
-1. interactions
-2. sessions
-3. users
-4. policies
-5. threat_patterns
-6. analytics_cache
-
-Additional schema details are documented in docs/firestore_schema.md.
-
-## 12) Current Implementation Status
-
-| Area | Status |
-|---|---|
-| FastAPI guardrail middleware | Implemented |
-| Bidirectional ingress and egress checks | Implemented |
-| Local model path resolution | Implemented |
-| Firebase logging and policy sync | Implemented |
-| React frontend security chat | Implemented |
-| Browser extension advanced React/Plasmo runtime | Baseline scaffold |
-| SDK starters | Baseline scaffold |
-
-## 13) Troubleshooting
-
-1. Use http://127.0.0.1:8000 for local backend tests.
-2. If backend port is busy, rerun npm run dev:backend:stable.
-3. If a model does not load locally, verify model artifact files exist in backend/models.
-4. If logs or stats fail with authentication errors, validate the active auth token/session context.
-5. If frontend cannot connect, verify backend terminal is running and frontend points to the expected local API base URL.
-
-## 14) Security Note
-
-Never commit secret files, API keys, or Firebase service-account JSON credentials. Keep environment files local and restricted by .gitignore policies.
-
-## 15) License
-
-License policy can be added here based on project governance requirements.
