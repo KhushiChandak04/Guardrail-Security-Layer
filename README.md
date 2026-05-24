@@ -1,3 +1,4 @@
+
 # Guardrail Security Layer
 
 <p align="left">
@@ -16,6 +17,10 @@
 Production-grade bidirectional security orchestration layer for GenAI systems, designed to control model risk before and after inference.
 
 Guardrail Security Layer is built as a high-assurance middleware plane between user-facing clients and foundation models. It fuses rule-driven detection, vector intelligence, and model-based risk scoring to enforce policy in real time across the full prompt-response lifecycle. The platform is engineered for advanced threat scenarios including jailbreak mutation, prompt injection chains, harmful instruction requests, data leakage, and response-side PII exposure.
+
+## Project Recording 
+
+https://github.com/user-attachments/assets/d97ee7fb-c52e-434a-9801-bd3743ea3319
 
 ## 1) Executive Overview
 
